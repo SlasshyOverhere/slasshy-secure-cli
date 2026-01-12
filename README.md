@@ -27,10 +27,8 @@ A zero-knowledge encrypted vault that stores your sensitive data (passwords, fil
 
 ## Installation
 
-### From GitHub Packages
-
 ```bash
-npm install -g @slasshyoverhere/slasshy-secure-cli --registry=https://npm.pkg.github.com
+npm install -g slasshy-secure-cli
 ```
 
 ### From Source
