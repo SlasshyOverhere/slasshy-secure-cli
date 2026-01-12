@@ -1,5 +1,5 @@
 {
-  "name": "@slasshy/secure-cli",
+  "name": "@slasshyoverhere/secure-cli",
   "version": "1.0.0",
   "description": "Military-grade secure storage with steganography & Google Drive sync",
   "main": "dist/index.js",
@@ -16,7 +16,12 @@
     "prepublishOnly": "npm run build"
   },
   "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
     "access": "restricted"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SlasshyOverhere/slasshy-secure-cli.git"
   },
   "files": [
     "dist/**/*",
