@@ -6,7 +6,6 @@ import {
   vaultExists,
   unlock,
   isUnlocked,
-  listEntries,
   getEntry,
   getVaultPaths,
   getVaultIndex,
@@ -21,22 +20,21 @@ import {
 } from '../../storage/drive/index.js';
 import {
   embedInPNG,
-  scanForCarriers,
-  findBestCarrier,
+  generateCarrierImage,
 } from '../../steganography/index.js';
 import {
   fragmentData,
   serializeFragment,
   generateFilename,
 } from '../../obfuscation/index.js';
-import { promptPassword, promptCarrierPaths, promptConfirm } from '../prompts.js';
+import { promptPassword, promptConfirm } from '../prompts.js';
 import { initializeKeyManager, encryptObject, getEntryKey } from '../../crypto/index.js';
 import { randomInt } from '../../crypto/random.js';
 
 export async function syncCommand(options?: {
   push?: boolean;
   pull?: boolean;
-  carrierDir?: string;
+  auto?: boolean;
 }): Promise<void> {
   console.log(chalk.bold('\n  Sync with Google Drive\n'));
 
@@ -107,35 +105,9 @@ export async function syncCommand(options?: {
 
   console.log(chalk.yellow(`\n  ${pendingEntries.length} entries need to be synced.\n`));
 
-  // Get carrier images
-  let carrierDir = options?.carrierDir;
-  if (!carrierDir) {
-    console.log(chalk.gray('  You need to provide PNG images to hide your data in.'));
-    console.log(chalk.gray('  These images will be modified and uploaded to Drive.\n'));
-
-    const paths = await promptCarrierPaths();
-    if (paths.length === 0) {
-      console.log(chalk.yellow('  No carrier images provided. Sync cancelled.\n'));
-      return;
-    }
-    carrierDir = paths[0];
-  }
-
-  // Scan for carriers
-  const scanSpinner = ora('Scanning for carrier images...').start();
-  const carriers = await scanForCarriers(carrierDir!);
-  scanSpinner.stop();
-
-  if (carriers.length === 0) {
-    console.log(chalk.red(`\n  No valid PNG images found in: ${carrierDir}\n`));
-    return;
-  }
-
-  console.log(chalk.gray(`  Found ${carriers.length} carrier images.\n`));
-
   // Confirm sync
   const confirmed = await promptConfirm(
-    `Upload ${pendingEntries.length} entries using ${carriers.length} carrier images?`
+    `Upload ${pendingEntries.length} entries with auto-generated carrier images?`
   );
   if (!confirmed) {
     console.log(chalk.gray('\n  Sync cancelled.\n'));
@@ -148,7 +120,6 @@ export async function syncCommand(options?: {
 
   const folderId = await getSlasshyFolder();
   let uploaded = 0;
-  let carrierIndex = 0;
 
   for (const entryId of pendingEntries) {
     const entry = await getEntry(entryId);
@@ -167,28 +138,32 @@ export async function syncCommand(options?: {
       const driveFileIds: string[] = [];
 
       for (const fragment of fragments) {
-        if (carrierIndex >= carriers.length) {
-          throw new Error('Not enough carrier images');
-        }
-
-        const carrier = carriers[carrierIndex]!;
-        carrierIndex++;
-
-        // Serialize and embed
+        // Serialize fragment
         const serialized = serializeFragment(fragment);
+
+        // Generate carrier image with enough capacity
+        const carrierFilename = `carrier_${Date.now()}_${randomInt(1000, 9999)}.png`;
+        const carrierPath = path.join(carriersDir, carrierFilename);
+
+        await generateCarrierImage(carrierPath, serialized.length + 1000);
+
+        // Embed data in carrier
         const outputFilename = generateFilename('png');
         const outputPath = path.join(carriersDir, outputFilename);
 
-        await embedInPNG(carrier.path, serialized, outputPath);
+        await embedInPNG(carrierPath, serialized, outputPath);
 
-        // Random delay
-        await new Promise(r => setTimeout(r, randomInt(500, 3000)));
+        // Clean up carrier
+        await fs.unlink(carrierPath).catch(() => {});
+
+        // Random delay (anti-pattern detection)
+        await new Promise(r => setTimeout(r, randomInt(500, 2000)));
 
         // Upload
         const fileId = await uploadFile(outputPath, outputFilename, 'image/png', folderId);
         driveFileIds.push(fileId);
 
-        // Cleanup
+        // Cleanup output
         await fs.unlink(outputPath).catch(() => {});
       }
 
@@ -208,5 +183,6 @@ export async function syncCommand(options?: {
   // Save updated index
   await updateVaultIndex({ lastSync: Date.now() });
 
-  console.log(chalk.green(`\n  Sync complete! ${uploaded} entries uploaded.\n`));
+  console.log(chalk.green(`\n  Sync complete! ${uploaded} entries uploaded.`));
+  console.log(chalk.gray('  Your data is hidden in auto-generated images on Google Drive.\n'));
 }

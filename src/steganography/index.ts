@@ -16,3 +16,10 @@ export {
   validateCarrier,
   type CarrierFile,
 } from './carrier-manager.js';
+
+export {
+  generateCarrierImage,
+  generateCarriers,
+  ensureCarrierCapacity,
+  type GeneratedCarrier,
+} from './auto-carrier.js';
