@@ -9,9 +9,6 @@ const SCOPES = ['https://www.googleapis.com/auth/drive.file'];
 const TOKEN_PATH = path.join(os.homedir(), '.slasshy', 'drive_token.enc');
 const CONFIG_PATH = path.join(os.homedir(), '.slasshy', 'oauth_config.json');
 
-// Default OAuth server URL (can be overridden in config)
-const DEFAULT_OAUTH_SERVER = 'https://slasshy-secure-cli.onrender.com';
-
 let driveClient: drive_v3.Drive | null = null;
 let authClient: OAuth2Client | null = null;
 
@@ -20,14 +17,26 @@ interface OAuthConfig {
 }
 
 /**
- * Get OAuth server URL from config or use default
+ * Check if OAuth server URL is configured
  */
-async function getOAuthServerUrl(): Promise<string> {
+export async function isOAuthServerConfigured(): Promise<boolean> {
   try {
     const config = JSON.parse(await fs.readFile(CONFIG_PATH, 'utf-8')) as OAuthConfig;
-    return config.serverUrl || DEFAULT_OAUTH_SERVER;
+    return !!config.serverUrl && config.serverUrl.length > 0;
   } catch {
-    return DEFAULT_OAUTH_SERVER;
+    return false;
+  }
+}
+
+/**
+ * Get OAuth server URL from config
+ */
+export async function getOAuthServerUrl(): Promise<string | null> {
+  try {
+    const config = JSON.parse(await fs.readFile(CONFIG_PATH, 'utf-8')) as OAuthConfig;
+    return config.serverUrl || null;
+  } catch {
+    return null;
   }
 }
 
@@ -104,6 +113,10 @@ interface OAuthRefreshResponse {
 export async function startOAuthFlow(): Promise<{ authUrl: string; sessionId: string }> {
   const serverUrl = await getOAuthServerUrl();
 
+  if (!serverUrl) {
+    throw new Error('OAuth server not configured. Run "slasshy auth" to set up your backend URL.');
+  }
+
   const response = await fetch(`${serverUrl}/oauth/start`);
   if (!response.ok) {
     throw new Error(`OAuth server error: ${response.statusText}`);
@@ -123,6 +136,10 @@ export async function pollForTokens(
   intervalMs: number = 2000
 ): Promise<object> {
   const serverUrl = await getOAuthServerUrl();
+
+  if (!serverUrl) {
+    throw new Error('OAuth server not configured.');
+  }
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const response = await fetch(
@@ -165,6 +182,11 @@ export async function pollForTokens(
  */
 async function refreshTokensViaServer(refreshToken: string): Promise<object> {
   const serverUrl = await getOAuthServerUrl();
+
+  if (!serverUrl) {
+    throw new Error('OAuth server not configured.');
+  }
+
   const encryptionKey = randomHex(16);
 
   const response = await fetch(`${serverUrl}/oauth/refresh`, {

@@ -7,3 +7,5 @@ export { syncCommand } from './sync.js';
 export { statusCommand } from './status.js';
 export { lockCommand } from './lock.js';
 export { authCommand } from './auth.js';
+export { uploadCommand } from './upload.js';
+export { downloadCommand } from './download.js';

@@ -5,7 +5,10 @@ export {
   lock,
   isUnlocked,
   addEntry,
+  addFileEntry,
   getEntry,
+  getFileEntry,
+  getFileData,
   searchEntries,
   listEntries,
   updateEntry,
@@ -18,10 +21,14 @@ export {
 
 export {
   createEntry,
+  createFileEntry,
   validateEntry,
+  validateFileEntry,
   validateVaultIndex,
   type Entry,
+  type FileEntry,
   type VaultIndex,
   type IndexEntry,
   type VaultConfig,
+  type EntryTypeEnum,
 } from './schema.js';

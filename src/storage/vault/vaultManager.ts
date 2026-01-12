@@ -1,11 +1,13 @@
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import crypto from 'crypto';
 import {
   encryptObject,
   decryptObject,
   encryptToPayload,
   decryptToString,
+  decryptFromPayload,
   createVault,
   unlockVault,
   lockVault,
@@ -18,9 +20,12 @@ import {
 import {
   createEmptyIndex,
   createEntry,
+  createFileEntry,
   validateEntry,
+  validateFileEntry,
   validateVaultIndex,
   type Entry,
+  type FileEntry,
   type VaultIndex,
   type IndexEntry,
 } from './schema.js';
@@ -218,6 +223,7 @@ export async function addEntry(
   // Create index entry
   const indexEntry: IndexEntry = {
     titleEncrypted: encryptedTitle,
+    entryType: 'password',
     fragments: [], // Will be populated when syncing to Drive
     carrierType: 'png',
     localPath: undefined,
@@ -441,4 +447,180 @@ export async function updateVaultIndex(updates: Partial<VaultIndex['metadata']>)
 
   vaultIndex.metadata = { ...vaultIndex.metadata, ...updates };
   await saveIndexWithHeader();
+}
+
+/**
+ * Calculate file checksum (SHA-256)
+ */
+function calculateChecksum(data: Buffer): string {
+  return crypto.createHash('sha256').update(data).digest('hex');
+}
+
+/**
+ * Add a file entry to the vault
+ */
+export async function addFileEntry(
+  title: string,
+  filePath: string,
+  notes?: string
+): Promise<FileEntry> {
+  if (!isUnlocked() || !vaultIndex) {
+    throw new Error('Vault is locked');
+  }
+
+  // Read file
+  const fileData = await fs.readFile(filePath);
+  const fileName = path.basename(filePath);
+  const ext = path.extname(fileName).toLowerCase();
+
+  // Determine MIME type
+  const mimeTypes: Record<string, string> = {
+    '.pdf': 'application/pdf',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xls': 'application/vnd.ms-excel',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.ppt': 'application/vnd.ms-powerpoint',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    '.zip': 'application/zip',
+    '.rar': 'application/x-rar-compressed',
+    '.7z': 'application/x-7z-compressed',
+    '.tar': 'application/x-tar',
+    '.gz': 'application/gzip',
+    '.mp3': 'audio/mpeg',
+    '.wav': 'audio/wav',
+    '.flac': 'audio/flac',
+    '.ogg': 'audio/ogg',
+    '.mp4': 'video/mp4',
+    '.mkv': 'video/x-matroska',
+    '.avi': 'video/x-msvideo',
+    '.mov': 'video/quicktime',
+    '.webm': 'video/webm',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
+    '.txt': 'text/plain',
+    '.json': 'application/json',
+    '.xml': 'application/xml',
+    '.html': 'text/html',
+    '.css': 'text/css',
+    '.js': 'application/javascript',
+    '.ts': 'application/typescript',
+  };
+
+  const mimeType = mimeTypes[ext] || 'application/octet-stream';
+  const checksum = calculateChecksum(fileData);
+
+  // Create file entry metadata
+  const entry = createFileEntry(title, {
+    originalName: fileName,
+    mimeType,
+    size: fileData.length,
+    checksum,
+    notes,
+  });
+
+  const entryKey = getEntryKey();
+  const indexKey = getIndexKey();
+
+  // Encrypt the file entry metadata
+  const encryptedEntry = encryptObject(entry, entryKey, entry.id);
+
+  // Encrypt the file data separately (as base64 payload)
+  const encryptedFileData = encryptToPayload(fileData, entryKey, entry.id);
+
+  // Create index entry
+  const indexEntry: IndexEntry = {
+    titleEncrypted: encryptToPayload(title, indexKey),
+    entryType: 'file',
+    fragments: [],
+    carrierType: 'png',
+    localPath: undefined,
+    fileSize: fileData.length,
+    mimeType,
+    created: entry.created,
+    modified: entry.modified,
+  };
+
+  // Store encrypted entry metadata
+  const entryPath = path.join(VAULT_DIR, 'entries', `${entry.id}.enc`);
+  await fs.mkdir(path.join(VAULT_DIR, 'entries'), { recursive: true });
+  await fs.writeFile(entryPath, encryptedEntry, 'utf-8');
+
+  // Store encrypted file data
+  const filesDir = path.join(VAULT_DIR, 'files');
+  await fs.mkdir(filesDir, { recursive: true });
+  const fileDataPath = path.join(filesDir, `${entry.id}.bin`);
+  await fs.writeFile(fileDataPath, encryptedFileData, 'utf-8');
+
+  // Update index
+  vaultIndex.entries[entry.id] = indexEntry;
+  vaultIndex.metadata.entryCount++;
+  vaultIndex.metadata.lastSync = null;
+
+  await saveIndexWithHeader();
+
+  return entry;
+}
+
+/**
+ * Get a file entry by ID
+ */
+export async function getFileEntry(id: string): Promise<FileEntry | null> {
+  if (!isUnlocked() || !vaultIndex) {
+    throw new Error('Vault is locked');
+  }
+
+  const indexEntry = vaultIndex.entries[id];
+  if (!indexEntry || indexEntry.entryType !== 'file') {
+    return null;
+  }
+
+  const entryPath = path.join(VAULT_DIR, 'entries', `${id}.enc`);
+
+  try {
+    const encryptedEntry = await fs.readFile(entryPath, 'utf-8');
+    const entryKey = getEntryKey();
+    const entry = decryptObject<FileEntry>(encryptedEntry, entryKey, id);
+    return validateFileEntry(entry);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get the decrypted file data by entry ID
+ */
+export async function getFileData(id: string): Promise<Buffer | null> {
+  if (!isUnlocked() || !vaultIndex) {
+    throw new Error('Vault is locked');
+  }
+
+  const indexEntry = vaultIndex.entries[id];
+  if (!indexEntry || indexEntry.entryType !== 'file') {
+    return null;
+  }
+
+  const fileDataPath = path.join(VAULT_DIR, 'files', `${id}.bin`);
+
+  try {
+    const encryptedData = await fs.readFile(fileDataPath, 'utf-8');
+    const entryKey = getEntryKey();
+    return decryptFromPayload(encryptedData, entryKey, id);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Format file size for display
+ */
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }

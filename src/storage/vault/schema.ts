@@ -1,8 +1,13 @@
 import { z } from 'zod';
 
-// Entry schema for validation
+// Entry types
+export const EntryType = z.enum(['password', 'file']);
+export type EntryTypeEnum = z.infer<typeof EntryType>;
+
+// Base entry schema for password entries
 export const EntrySchema = z.object({
   id: z.string().uuid(),
+  type: EntryType.default('password'),
   title: z.string().min(1).max(256),
   username: z.string().max(256).optional(),
   password: z.string().max(4096).optional(),
@@ -14,12 +19,31 @@ export const EntrySchema = z.object({
 
 export type Entry = z.infer<typeof EntrySchema>;
 
+// File entry schema
+export const FileEntrySchema = z.object({
+  id: z.string().uuid(),
+  type: z.literal('file'),
+  title: z.string().min(1).max(256),
+  originalName: z.string().min(1).max(512),
+  mimeType: z.string().max(256),
+  size: z.number().int().nonnegative(),
+  checksum: z.string(), // SHA-256 hash for integrity
+  notes: z.string().max(65536).optional(),
+  created: z.number().int().positive(),
+  modified: z.number().int().positive(),
+});
+
+export type FileEntry = z.infer<typeof FileEntrySchema>;
+
 // Vault index entry (encrypted reference)
 export const IndexEntrySchema = z.object({
   titleEncrypted: z.string(),
+  entryType: EntryType.default('password'), // password or file
   fragments: z.array(z.string()), // Drive file IDs or local file paths
   carrierType: z.enum(['png', 'jpg', 'decoy']),
   localPath: z.string().optional(), // Path to local carrier file
+  fileSize: z.number().int().nonnegative().optional(), // For file entries
+  mimeType: z.string().optional(), // For file entries
   created: z.number().int().positive(),
   modified: z.number().int().positive(),
 });
@@ -84,6 +108,7 @@ export function createEntry(
 
   return EntrySchema.parse({
     id,
+    type: 'password',
     title,
     username: data.username || undefined,
     password: data.password || undefined,
@@ -94,9 +119,42 @@ export function createEntry(
   });
 }
 
+// Create a new file entry
+export function createFileEntry(
+  title: string,
+  data: {
+    originalName: string;
+    mimeType: string;
+    size: number;
+    checksum: string;
+    notes?: string;
+  }
+): FileEntry {
+  const now = Date.now();
+  const id = crypto.randomUUID();
+
+  return FileEntrySchema.parse({
+    id,
+    type: 'file',
+    title,
+    originalName: data.originalName,
+    mimeType: data.mimeType,
+    size: data.size,
+    checksum: data.checksum,
+    notes: data.notes || undefined,
+    created: now,
+    modified: now,
+  });
+}
+
 // Validate entry
 export function validateEntry(entry: unknown): Entry {
   return EntrySchema.parse(entry);
+}
+
+// Validate file entry
+export function validateFileEntry(entry: unknown): FileEntry {
+  return FileEntrySchema.parse(entry);
 }
 
 // Validate vault index

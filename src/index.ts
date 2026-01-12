@@ -12,6 +12,8 @@ import {
   statusCommand,
   lockCommand,
   authCommand,
+  uploadCommand,
+  downloadCommand,
 } from './cli/commands/index.js';
 
 const program = new Command();
@@ -29,7 +31,7 @@ const banner = `
 program
   .name('slasshy')
   .description('Military-grade secure storage with steganography & Google Drive sync')
-  .version('1.0.0')
+  .version('1.3.0')
   .addHelpText('before', chalk.cyan(banner));
 
 // Init command
@@ -65,8 +67,27 @@ program
   .alias('ls')
   .description('List all entries in the vault')
   .option('-f, --filter <term>', 'Filter entries by title')
+  .option('-t, --type <type>', 'Filter by type: passwords or files')
   .action(async (options) => {
     await listCommand(options);
+  });
+
+// Upload command
+program
+  .command('upload [file]')
+  .alias('up')
+  .description('Upload a file to the vault (drag & drop supported)')
+  .action(async (file) => {
+    await uploadCommand(file);
+  });
+
+// Download command
+program
+  .command('download [search]')
+  .alias('dl')
+  .description('Download a file from the vault')
+  .action(async (search) => {
+    await downloadCommand(search);
   });
 
 // Delete command

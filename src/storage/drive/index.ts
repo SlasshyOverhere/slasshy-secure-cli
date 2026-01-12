@@ -3,6 +3,8 @@ export {
   authenticateDrive,
   performOAuthFlow,
   setOAuthServerUrl,
+  getOAuthServerUrl,
+  isOAuthServerConfigured,
   getDriveClient,
   isDriveConnected,
   disconnectDrive,
