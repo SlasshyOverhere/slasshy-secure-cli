@@ -10,7 +10,7 @@ const TOKEN_PATH = path.join(os.homedir(), '.slasshy', 'drive_token.enc');
 const CONFIG_PATH = path.join(os.homedir(), '.slasshy', 'oauth_config.json');
 
 // Default OAuth server URL (can be overridden in config)
-const DEFAULT_OAUTH_SERVER = 'https://slasshy-oauth.onrender.com';
+const DEFAULT_OAUTH_SERVER = 'https://slasshy-secure-cli.onrender.com';
 
 let driveClient: drive_v3.Drive | null = null;
 let authClient: OAuth2Client | null = null;
