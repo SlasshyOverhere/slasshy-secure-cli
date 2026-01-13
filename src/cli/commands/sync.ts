@@ -1,14 +1,11 @@
 import chalk from 'chalk';
 import ora from 'ora';
-import fs from 'fs/promises';
-import path from 'path';
 import cliProgress from 'cli-progress';
 import {
   vaultExists,
   unlock,
   isUnlocked,
   getEntry,
-  getVaultPaths,
   getVaultIndex,
   updateVaultIndex,
 } from '../../storage/vault/index.js';
@@ -16,23 +13,13 @@ import {
   isAuthenticated,
   authenticateDrive,
   isDriveConnected,
-  getSlasshyFolder,
-  uploadFile,
   hasAppDataAccess,
   uploadFileToCloud,
+  uploadBufferToAppData,
+  findAppDataFile,
 } from '../../storage/drive/index.js';
-import {
-  embedInPNG,
-  generateCarrierImage,
-} from '../../steganography/index.js';
-import {
-  fragmentData,
-  serializeFragment,
-  generateFilename,
-} from '../../obfuscation/index.js';
 import { promptPassword, promptConfirm } from '../prompts.js';
 import { initializeKeyManager, encryptObject, getEntryKey } from '../../crypto/index.js';
-import { randomInt } from '../../crypto/random.js';
 import { formatBytes } from '../progress.js';
 
 export async function syncCommand(options?: {
@@ -88,12 +75,25 @@ export async function syncCommand(options?: {
     }
   }
 
-  // Check for appDataFolder access (needed for file uploads)
-  let hasHiddenStorageAccess = false;
+  // Check for appDataFolder access
+  const spinner = ora('Checking hidden storage access...').start();
+  let hasHiddenAccess = false;
   try {
-    hasHiddenStorageAccess = await hasAppDataAccess();
-  } catch {
-    // No access, will skip file sync
+    hasHiddenAccess = await hasAppDataAccess();
+    if (hasHiddenAccess) {
+      spinner.succeed('Hidden storage available');
+    } else {
+      spinner.fail('Hidden storage not available');
+      console.log(chalk.yellow('\n  ⚠ You need to re-authenticate to enable hidden storage.'));
+      console.log(chalk.gray('    Run "slasshy auth --logout" then "slasshy auth"\n'));
+      return;
+    }
+  } catch (error) {
+    spinner.fail('Failed to check hidden storage');
+    if (error instanceof Error) {
+      console.log(chalk.red(`  ${error.message}`));
+    }
+    return;
   }
 
   // Get entries that need syncing
@@ -103,19 +103,19 @@ export async function syncCommand(options?: {
     return;
   }
 
-  // Separate password entries (steganography) from file entries (direct upload)
+  // Find all entries that need syncing
   const pendingPasswordEntries: string[] = [];
   const pendingFileEntries: string[] = [];
 
   for (const [id, indexEntry] of Object.entries(vaultIndex.entries)) {
     if (indexEntry.entryType === 'file') {
-      // File entries: check cloudChunks for sync status
+      // File entries: check cloudChunks
       if (!indexEntry.cloudChunks || indexEntry.cloudChunks.length === 0) {
         pendingFileEntries.push(id);
       }
     } else {
-      // Password entries: check fragments for sync status
-      if (indexEntry.fragments.length === 0) {
+      // Password entries: check cloudSyncStatus
+      if (indexEntry.cloudSyncStatus !== 'synced') {
         pendingPasswordEntries.push(id);
       }
     }
@@ -124,26 +124,27 @@ export async function syncCommand(options?: {
   const totalPending = pendingPasswordEntries.length + pendingFileEntries.length;
 
   if (totalPending === 0) {
-    console.log(chalk.green('\n  All entries are synced!\n'));
+    console.log(chalk.green('\n  ✓ All entries are synced!\n'));
     return;
   }
 
   // Show what needs syncing
   console.log(chalk.yellow(`\n  ${totalPending} entries need to be synced:`));
   if (pendingPasswordEntries.length > 0) {
-    console.log(chalk.gray(`    • ${pendingPasswordEntries.length} password entries (steganography)`));
+    console.log(chalk.gray(`    • ${pendingPasswordEntries.length} password entries`));
   }
   if (pendingFileEntries.length > 0) {
-    console.log(chalk.gray(`    • ${pendingFileEntries.length} file entries (hidden storage)`));
-    if (!hasHiddenStorageAccess) {
-      console.log(chalk.yellow('\n  ⚠ Hidden storage not available. Re-authenticate to enable.'));
-      console.log(chalk.gray('    Run "slasshy auth --logout" then "slasshy auth" to get new permissions.\n'));
+    // Calculate total file size
+    let totalFileSize = 0;
+    for (const id of pendingFileEntries) {
+      totalFileSize += vaultIndex.entries[id]?.fileSize || 0;
     }
+    console.log(chalk.gray(`    • ${pendingFileEntries.length} files (${formatBytes(totalFileSize)})`));
   }
   console.log('');
 
   // Confirm sync
-  const confirmed = await promptConfirm('Proceed with sync?');
+  const confirmed = await promptConfirm('Proceed with sync to hidden storage?');
   if (!confirmed) {
     console.log(chalk.gray('\n  Sync cancelled.\n'));
     return;
@@ -151,17 +152,12 @@ export async function syncCommand(options?: {
 
   let totalUploaded = 0;
 
-  // ========== SYNC PASSWORD ENTRIES (Steganography) ==========
+  // ========== SYNC PASSWORD ENTRIES ==========
   if (pendingPasswordEntries.length > 0) {
-    console.log(chalk.gray('\n  Syncing password entries (steganography)...\n'));
-
-    const { carriers: carriersDir } = getVaultPaths();
-    await fs.mkdir(carriersDir, { recursive: true });
-
-    const folderId = await getSlasshyFolder();
+    console.log(chalk.gray('\n  Syncing password entries...\n'));
 
     const progressBar = new cliProgress.SingleBar({
-      format: `  Passwords |${chalk.cyan('{bar}')}| {percentage}% | {value}/{total} | {currentEntry}`,
+      format: `  Passwords |${chalk.cyan('{bar}')}| {percentage}% | {value}/{total}`,
       barCompleteChar: '\u2588',
       barIncompleteChar: '\u2591',
       hideCursor: true,
@@ -169,74 +165,61 @@ export async function syncCommand(options?: {
       stopOnComplete: true,
     }, cliProgress.Presets.shades_classic);
 
-    progressBar.start(pendingPasswordEntries.length, 0, { currentEntry: 'Starting...' });
+    progressBar.start(pendingPasswordEntries.length, 0);
 
-    let uploaded = 0;
     for (const entryId of pendingPasswordEntries) {
-      const entry = await getEntry(entryId);
-      if (!entry) {
-        progressBar.increment({ currentEntry: 'Skipped' });
-        continue;
-      }
-
-      progressBar.update(uploaded, { currentEntry: `"${entry.title.substring(0, 25)}..."` });
-
       try {
+        const entry = await getEntry(entryId);
+        if (!entry) {
+          progressBar.increment();
+          continue;
+        }
+
+        // Encrypt entry data
         const entryKey = getEntryKey();
         const encryptedEntry = encryptObject(entry, entryKey, entryId);
         const entryBuffer = Buffer.from(encryptedEntry, 'utf-8');
 
-        const fragments = fragmentData(entryBuffer);
-        const driveFileIds: string[] = [];
+        // Upload to hidden appDataFolder
+        const cloudFileName = `slasshy_pwd_${entryId}.enc`;
 
-        for (const fragment of fragments) {
-          const serialized = serializeFragment(fragment);
-          const carrierFilename = `carrier_${Date.now()}_${randomInt(1000, 9999)}.png`;
-          const carrierPath = path.join(carriersDir, carrierFilename);
-
-          await generateCarrierImage(carrierPath, serialized.length + 1000);
-
-          const outputFilename = generateFilename('png');
-          const outputPath = path.join(carriersDir, outputFilename);
-
-          await embedInPNG(carrierPath, serialized, outputPath);
-          await fs.unlink(carrierPath).catch(() => {});
-
-          await new Promise(r => setTimeout(r, randomInt(500, 2000)));
-
-          const fileId = await uploadFile(outputPath, outputFilename, 'image/png', folderId);
-          driveFileIds.push(fileId);
-
-          await fs.unlink(outputPath).catch(() => {});
+        // Check if already exists
+        const existingId = await findAppDataFile(cloudFileName);
+        if (!existingId) {
+          await uploadBufferToAppData(entryBuffer, cloudFileName);
         }
 
-        vaultIndex.entries[entryId]!.fragments = driveFileIds;
-        uploaded++;
+        // Update index
+        vaultIndex.entries[entryId]!.cloudSyncStatus = 'synced';
+        vaultIndex.entries[entryId]!.cloudSyncedAt = Date.now();
+
         totalUploaded++;
-        progressBar.update(uploaded, { currentEntry: `✓ "${entry.title.substring(0, 20)}..."` });
+        progressBar.increment();
       } catch {
-        progressBar.update(uploaded, { currentEntry: `✗ Failed` });
+        // Mark as error but continue
+        vaultIndex.entries[entryId]!.cloudSyncStatus = 'error';
+        progressBar.increment();
       }
     }
 
     progressBar.stop();
   }
 
-  // ========== SYNC FILE ENTRIES (Hidden appDataFolder) ==========
-  if (pendingFileEntries.length > 0 && hasHiddenStorageAccess) {
-    console.log(chalk.gray('\n  Syncing files to hidden storage...\n'));
+  // ========== SYNC FILE ENTRIES ==========
+  if (pendingFileEntries.length > 0) {
+    console.log(chalk.gray('\n  Syncing files...\n'));
 
-    // Calculate total bytes to upload
+    // Calculate total bytes
     let totalBytes = 0;
     const fileInfos: Array<{ id: string; title: string; size: number; chunkCount: number }> = [];
 
     for (const entryId of pendingFileEntries) {
       const indexEntry = vaultIndex.entries[entryId];
       if (indexEntry) {
-        const title = await getEntryTitle(entryId);
+        const entry = await getEntry(entryId);
         fileInfos.push({
           id: entryId,
-          title: title || 'Unknown',
+          title: entry?.title || 'Unknown',
           size: indexEntry.fileSize || 0,
           chunkCount: indexEntry.chunkCount || 1,
         });
@@ -244,7 +227,7 @@ export async function syncCommand(options?: {
       }
     }
 
-    console.log(chalk.gray(`  Total: ${formatBytes(totalBytes)} in ${pendingFileEntries.length} files\n`));
+    console.log(chalk.gray(`  Total: ${formatBytes(totalBytes)}\n`));
 
     const progressBar = new cliProgress.SingleBar({
       format: `  Uploading |${chalk.cyan('{bar}')}| {percentage}% | {transferred}/{total} | {currentFile}`,
@@ -271,21 +254,21 @@ export async function syncCommand(options?: {
       });
 
       try {
-        // Upload all chunks for this file to hidden appDataFolder
+        // Upload all chunks to hidden appDataFolder
         const cloudChunks = await uploadFileToCloud(
           fileInfo.id,
           fileInfo.chunkCount,
-          (chunksUploaded, totalChunks, chunkBytesUploaded, chunkTotalBytes) => {
-            const currentProgress = bytesUploaded + chunkBytesUploaded;
-            progressBar.update(Math.round((currentProgress / totalBytes) * 100), {
-              transferred: formatBytes(currentProgress),
+          (chunksUploaded, totalChunks, chunkBytes, chunkTotal) => {
+            const current = bytesUploaded + chunkBytes;
+            progressBar.update(Math.round((current / totalBytes) * 100), {
+              transferred: formatBytes(current),
               total: formatBytes(totalBytes),
-              currentFile: `"${fileInfo.title.substring(0, 20)}..." (${chunksUploaded}/${totalChunks})`,
+              currentFile: `"${fileInfo.title.substring(0, 18)}..." (${chunksUploaded}/${totalChunks})`,
             });
           }
         );
 
-        // Update vault index with cloud chunk info
+        // Update vault index
         vaultIndex.entries[fileInfo.id]!.cloudChunks = cloudChunks;
         vaultIndex.entries[fileInfo.id]!.cloudSyncStatus = 'synced';
         vaultIndex.entries[fileInfo.id]!.cloudSyncedAt = Date.now();
@@ -298,13 +281,8 @@ export async function syncCommand(options?: {
           total: formatBytes(totalBytes),
           currentFile: `✓ "${fileInfo.title.substring(0, 20)}..."`,
         });
-      } catch (error) {
+      } catch {
         vaultIndex.entries[fileInfo.id]!.cloudSyncStatus = 'error';
-        progressBar.update(Math.round((bytesUploaded / totalBytes) * 100), {
-          transferred: formatBytes(bytesUploaded),
-          total: formatBytes(totalBytes),
-          currentFile: `✗ Failed: "${fileInfo.title.substring(0, 15)}..."`,
-        });
       }
     }
 
@@ -315,23 +293,6 @@ export async function syncCommand(options?: {
   await updateVaultIndex({ lastSync: Date.now() });
 
   console.log(chalk.green(`\n  ✓ Sync complete! ${totalUploaded} entries uploaded.`));
-  if (pendingPasswordEntries.length > 0) {
-    console.log(chalk.gray('    • Password entries hidden in images (visible in Drive)'));
-  }
-  if (pendingFileEntries.length > 0 && hasHiddenStorageAccess) {
-    console.log(chalk.gray('    • Files stored in hidden appDataFolder (INVISIBLE in Drive)'));
-  }
+  console.log(chalk.gray('    All data stored in hidden appDataFolder (INVISIBLE in Drive)'));
   console.log('');
-}
-
-/**
- * Helper to get entry title from encrypted index
- */
-async function getEntryTitle(entryId: string): Promise<string | null> {
-  try {
-    const entry = await getEntry(entryId);
-    return entry?.title || null;
-  } catch {
-    return null;
-  }
 }
