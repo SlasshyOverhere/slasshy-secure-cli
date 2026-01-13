@@ -1,5 +1,8 @@
 import chalk from 'chalk';
 import ora from 'ora';
+import fs from 'fs/promises';
+import path from 'path';
+import os from 'os';
 import cliProgress from 'cli-progress';
 import {
   vaultExists,
@@ -8,6 +11,7 @@ import {
   getEntry,
   getVaultIndex,
   updateVaultIndex,
+  getVaultPaths,
 } from '../../storage/vault/index.js';
 import {
   isAuthenticated,
@@ -17,10 +21,14 @@ import {
   uploadFileToCloud,
   uploadBufferToAppData,
   findAppDataFile,
+  updateAppDataFile,
 } from '../../storage/drive/index.js';
 import { promptPassword, promptConfirm } from '../prompts.js';
 import { initializeKeyManager, encryptObject, getEntryKey } from '../../crypto/index.js';
 import { formatBytes } from '../progress.js';
+
+// Cloud backup filename for vault index
+const VAULT_INDEX_CLOUD_NAME = 'slasshy_vault_index_backup.enc';
 
 export async function syncCommand(options?: {
   push?: boolean;
@@ -292,7 +300,29 @@ export async function syncCommand(options?: {
   // Save updated index
   await updateVaultIndex({ lastSync: Date.now() });
 
+  // Backup vault index to cloud for recovery
+  const backupSpinner = ora('Backing up vault index to cloud...').start();
+  try {
+    const { index: indexPath } = getVaultPaths();
+    const vaultData = await fs.readFile(indexPath, 'utf-8');
+    const vaultBuffer = Buffer.from(vaultData, 'utf-8');
+
+    // Check if backup already exists
+    const existingBackupId = await findAppDataFile(VAULT_INDEX_CLOUD_NAME);
+    if (existingBackupId) {
+      // Update existing backup
+      await updateAppDataFile(existingBackupId, vaultBuffer);
+    } else {
+      // Create new backup
+      await uploadBufferToAppData(vaultBuffer, VAULT_INDEX_CLOUD_NAME);
+    }
+    backupSpinner.succeed('Vault index backed up to cloud');
+  } catch (error) {
+    backupSpinner.warn('Could not backup vault index (sync still successful)');
+  }
+
   console.log(chalk.green(`\n  ✓ Sync complete! ${totalUploaded} entries uploaded.`));
   console.log(chalk.gray('    All data stored in hidden appDataFolder (INVISIBLE in Drive)'));
+  console.log(chalk.gray('    Vault index backed up for recovery on new devices'));
   console.log('');
 }

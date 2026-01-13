@@ -39,6 +39,7 @@ program
   .command('init')
   .description('Initialize a new encrypted vault')
   .option('-d, --drive', 'Set up Google Drive sync')
+  .option('-r, --restore', 'Restore vault from cloud backup')
   .action(async (options) => {
     await initCommand(options);
   });
