@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   check-and-publish:
@@ -33,7 +34,7 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Setup Node.js
+      - name: Setup Node.js for npm
         if: steps.check_tag.outputs.exists == 'false'
         uses: actions/setup-node@v4
         with:
@@ -58,11 +59,33 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish to npm
+      - name: Publish to npm (npmjs.org)
         if: steps.check_tag.outputs.exists == 'false'
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Setup Node.js for GitHub Packages
+        if: steps.check_tag.outputs.exists == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@slasshyoverhere'
+
+      - name: Publish to GitHub Packages
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          # Temporarily update package.json for scoped publish
+          node -e "
+            const pkg = require('./package.json');
+            pkg.name = '@slasshyoverhere/slasshy-secure-cli';
+            pkg.publishConfig = { registry: 'https://npm.pkg.github.com' };
+            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+          "
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Skip (version already released)
         if: steps.check_tag.outputs.exists == 'true'
