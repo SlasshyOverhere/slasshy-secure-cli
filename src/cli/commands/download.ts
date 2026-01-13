@@ -15,6 +15,7 @@ import {
 } from '../../storage/vault/index.js';
 import { initializeKeyManager } from '../../crypto/index.js';
 import { promptPassword } from '../prompts.js';
+import { createProgressTracker } from '../progress.js';
 
 /**
  * Format file size for display
@@ -166,13 +167,30 @@ export async function downloadCommand(query?: string): Promise<void> {
     // File doesn't exist, continue
   }
 
-  // Download file
-  const spinner = ora('Decrypting file...').start();
+  // Download file with progress bar
+  console.log(chalk.gray('  Decrypting file...\n'));
+  const progressTracker = createProgressTracker('Decrypting', fileEntry.size);
 
   try {
+    // Simulate progress while decryption happens (decryption is memory-bound)
+    let progressInterval: ReturnType<typeof setInterval> | null = null;
+    let simulatedBytes = 0;
+    const bytesPerTick = fileEntry.size / 20;
+
+    progressInterval = setInterval(() => {
+      if (simulatedBytes < fileEntry.size * 0.85) {
+        const increment = Math.min(bytesPerTick, fileEntry.size * 0.85 - simulatedBytes);
+        simulatedBytes += increment;
+        progressTracker.update(increment);
+      }
+    }, 100);
+
     const fileData = await getFileData(selectedId);
     if (!fileData) {
-      spinner.fail('Failed to decrypt file data');
+      if (progressInterval) clearInterval(progressInterval);
+      progressTracker.bar.stop();
+      console.log('');
+      console.log(chalk.red('  ✗ Failed to decrypt file data'));
       return;
     }
 
@@ -182,12 +200,19 @@ export async function downloadCommand(query?: string): Promise<void> {
     // Write file
     await fs.writeFile(outputPath, fileData);
 
-    spinner.succeed('File downloaded successfully!');
+    // Clear interval and finish progress
+    if (progressInterval) clearInterval(progressInterval);
+    progressTracker.finish();
+
+    console.log('');
+    console.log(chalk.green('  ✓ File downloaded successfully!'));
     console.log('');
     console.log(chalk.green(`  Saved to: ${outputPath}`));
     console.log('');
   } catch (error) {
-    spinner.fail('Failed to download file');
+    progressTracker.bar.stop();
+    console.log('');
+    console.log(chalk.red('  ✗ Failed to download file'));
     if (error instanceof Error) {
       console.log(chalk.red(`  ${error.message}`));
     }

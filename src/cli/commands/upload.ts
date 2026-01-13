@@ -11,6 +11,7 @@ import {
 } from '../../storage/vault/index.js';
 import { initializeKeyManager } from '../../crypto/index.js';
 import { promptPassword } from '../prompts.js';
+import { createProgressTracker } from '../progress.js';
 
 /**
  * Format file size for display
@@ -128,17 +129,33 @@ export async function uploadCommand(filePathArg?: string): Promise<void> {
     },
   ]);
 
-  // Upload file
-  const spinner = ora('Encrypting and storing file...').start();
+  // Upload file with progress bar
+  const stats = await fs.stat(filePath);
+  const fileSize = stats.size;
+
+  console.log(chalk.gray('  Encrypting and storing file...\n'));
+  const progressTracker = createProgressTracker('Encrypting', fileSize);
 
   try {
     const entry = await addFileEntry(
       title || defaultTitle,
       filePath,
-      notes || undefined
+      notes || undefined,
+      (bytesProcessed, totalBytes) => {
+        // Update progress bar based on actual progress
+        const currentPercent = Math.round((bytesProcessed / totalBytes) * 100);
+        progressTracker.bar.update(currentPercent, {
+          transferred: formatFileSize(bytesProcessed),
+          total: formatFileSize(totalBytes),
+        });
+      }
     );
 
-    spinner.succeed('File uploaded successfully!');
+    // Finish progress
+    progressTracker.finish();
+
+    console.log('');
+    console.log(chalk.green('  ✓ File uploaded successfully!'));
     console.log('');
     console.log(chalk.green('  File Details:'));
     console.log(chalk.gray(`  Title: ${entry.title}`));
@@ -149,7 +166,9 @@ export async function uploadCommand(filePathArg?: string): Promise<void> {
     console.log('');
     console.log(chalk.yellow('  Note: Run "slasshy sync" to upload to Google Drive.\n'));
   } catch (error) {
-    spinner.fail('Failed to upload file');
+    progressTracker.bar.stop();
+    console.log('');
+    console.log(chalk.red('  ✗ Failed to upload file'));
     if (error instanceof Error) {
       console.log(chalk.red(`  ${error.message}`));
     }

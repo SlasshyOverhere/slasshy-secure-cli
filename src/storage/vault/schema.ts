@@ -35,15 +35,29 @@ export const FileEntrySchema = z.object({
 
 export type FileEntry = z.infer<typeof FileEntrySchema>;
 
+// Cloud file chunk schema (for files stored in appDataFolder)
+export const CloudChunkSchema = z.object({
+  chunkIndex: z.number().int().nonnegative(),
+  driveFileId: z.string(),
+  size: z.number().int().nonnegative(),
+});
+
+export type CloudChunk = z.infer<typeof CloudChunkSchema>;
+
 // Vault index entry (encrypted reference)
 export const IndexEntrySchema = z.object({
   titleEncrypted: z.string(),
   entryType: EntryType.default('password'), // password or file
-  fragments: z.array(z.string()), // Drive file IDs or local file paths
+  fragments: z.array(z.string()), // Drive file IDs or local file paths (for steganography)
   carrierType: z.enum(['png', 'jpg', 'decoy']),
   localPath: z.string().optional(), // Path to local carrier file
   fileSize: z.number().int().nonnegative().optional(), // For file entries
   mimeType: z.string().optional(), // For file entries
+  chunkCount: z.number().int().nonnegative().optional(), // Number of chunks for large files
+  // Cloud sync for file entries (hidden appDataFolder storage)
+  cloudChunks: z.array(CloudChunkSchema).optional(), // Cloud storage chunk info
+  cloudSyncStatus: z.enum(['pending', 'uploading', 'synced', 'error']).optional(),
+  cloudSyncedAt: z.number().int().positive().optional(),
   created: z.number().int().positive(),
   modified: z.number().int().positive(),
 });

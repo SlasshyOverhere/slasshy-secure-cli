@@ -1,13 +1,21 @@
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import path from 'path';
 import os from 'os';
 import { google, drive_v3 } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
 import { encryptToPayload, decryptToString, getMetadataKey, randomHex } from '../../crypto/index.js';
 
-const SCOPES = ['https://www.googleapis.com/auth/drive.file'];
+// Scopes needed: drive.file for visible files, drive.appdata for hidden appDataFolder
+const SCOPES = [
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/drive.appdata'
+];
 const TOKEN_PATH = path.join(os.homedir(), '.slasshy', 'drive_token.enc');
 const CONFIG_PATH = path.join(os.homedir(), '.slasshy', 'oauth_config.json');
+
+// Hidden folder name in appDataFolder for encrypted file chunks
+const VAULT_FILES_FOLDER = 'slasshy_vault_files';
 
 let driveClient: drive_v3.Drive | null = null;
 let authClient: OAuth2Client | null = null;
@@ -471,3 +479,255 @@ export async function getOrCreateFolder(name: string): Promise<string> {
   }
   return createFolder(name);
 }
+
+// ============================================================================
+// HIDDEN APPDATAFOLDER FUNCTIONS - Files stored here are INVISIBLE to users
+// ============================================================================
+
+/**
+ * Upload a file to the hidden appDataFolder (invisible to user in Drive UI)
+ */
+export async function uploadToAppData(
+  filePath: string,
+  fileName: string,
+  onProgress?: (bytesUploaded: number, totalBytes: number) => void
+): Promise<string> {
+  const drive = getDriveClient();
+
+  const stats = await fs.stat(filePath);
+  const totalBytes = stats.size;
+
+  const fileMetadata: drive_v3.Schema$File = {
+    name: fileName,
+    parents: ['appDataFolder'], // This makes it hidden!
+  };
+
+  const media = {
+    mimeType: 'application/octet-stream',
+    body: fsSync.createReadStream(filePath),
+  };
+
+  // Track upload progress
+  let bytesUploaded = 0;
+  if (onProgress) {
+    const stream = media.body as fsSync.ReadStream;
+    stream.on('data', (chunk: Buffer | string) => {
+      const chunkLength = typeof chunk === 'string' ? Buffer.byteLength(chunk) : chunk.length;
+      bytesUploaded += chunkLength;
+      onProgress(bytesUploaded, totalBytes);
+    });
+  }
+
+  const response = await drive.files.create({
+    requestBody: fileMetadata,
+    media,
+    fields: 'id,name,size',
+  });
+
+  if (!response.data.id) {
+    throw new Error('Failed to upload file to appDataFolder: no ID returned');
+  }
+
+  return response.data.id;
+}
+
+/**
+ * Upload a buffer directly to appDataFolder (for smaller data)
+ */
+export async function uploadBufferToAppData(
+  data: Buffer,
+  fileName: string
+): Promise<string> {
+  const drive = getDriveClient();
+
+  const { Readable } = await import('stream');
+  const stream = Readable.from(data);
+
+  const fileMetadata: drive_v3.Schema$File = {
+    name: fileName,
+    parents: ['appDataFolder'],
+  };
+
+  const media = {
+    mimeType: 'application/octet-stream',
+    body: stream,
+  };
+
+  const response = await drive.files.create({
+    requestBody: fileMetadata,
+    media,
+    fields: 'id,name,size',
+  });
+
+  if (!response.data.id) {
+    throw new Error('Failed to upload buffer to appDataFolder: no ID returned');
+  }
+
+  return response.data.id;
+}
+
+/**
+ * List files in appDataFolder
+ */
+export async function listAppDataFiles(
+  namePattern?: string
+): Promise<drive_v3.Schema$File[]> {
+  const drive = getDriveClient();
+
+  let query = "'appDataFolder' in parents and trashed=false";
+  if (namePattern) {
+    query += ` and name contains '${namePattern}'`;
+  }
+
+  const response = await drive.files.list({
+    spaces: 'appDataFolder',
+    q: query,
+    fields: 'files(id, name, size, createdTime, modifiedTime)',
+    pageSize: 1000,
+  });
+
+  return response.data.files || [];
+}
+
+/**
+ * Find a file in appDataFolder by exact name
+ */
+export async function findAppDataFile(fileName: string): Promise<string | null> {
+  const drive = getDriveClient();
+
+  const response = await drive.files.list({
+    spaces: 'appDataFolder',
+    q: `name='${fileName}' and 'appDataFolder' in parents and trashed=false`,
+    fields: 'files(id, name)',
+  });
+
+  const files = response.data.files;
+  if (files && files.length > 0) {
+    return files[0]!.id || null;
+  }
+
+  return null;
+}
+
+/**
+ * Download a file from appDataFolder
+ */
+export async function downloadFromAppData(
+  fileId: string,
+  outputPath: string,
+  onProgress?: (bytesDownloaded: number, totalBytes: number) => void
+): Promise<void> {
+  const drive = getDriveClient();
+
+  // First get file size
+  const fileMeta = await drive.files.get({
+    fileId,
+    fields: 'size',
+  });
+  const totalBytes = parseInt(fileMeta.data.size || '0', 10);
+
+  const response = await drive.files.get(
+    { fileId, alt: 'media' },
+    { responseType: 'stream' }
+  );
+
+  const dest = fsSync.createWriteStream(outputPath);
+  let bytesDownloaded = 0;
+
+  return new Promise((resolve, reject) => {
+    const stream = response.data as NodeJS.ReadableStream;
+
+    if (onProgress) {
+      stream.on('data', (chunk: Buffer) => {
+        bytesDownloaded += chunk.length;
+        onProgress(bytesDownloaded, totalBytes);
+      });
+    }
+
+    stream
+      .on('end', () => resolve())
+      .on('error', (err: Error) => reject(err))
+      .pipe(dest);
+  });
+}
+
+/**
+ * Download a file from appDataFolder to buffer (for smaller files)
+ */
+export async function downloadAppDataToBuffer(fileId: string): Promise<Buffer> {
+  const drive = getDriveClient();
+
+  const response = await drive.files.get(
+    { fileId, alt: 'media' },
+    { responseType: 'arraybuffer' }
+  );
+
+  return Buffer.from(response.data as ArrayBuffer);
+}
+
+/**
+ * Delete a file from appDataFolder
+ */
+export async function deleteFromAppData(fileId: string): Promise<void> {
+  const drive = getDriveClient();
+  await drive.files.delete({ fileId });
+}
+
+/**
+ * Update/replace a file in appDataFolder
+ */
+export async function updateAppDataFile(
+  fileId: string,
+  data: Buffer
+): Promise<void> {
+  const drive = getDriveClient();
+
+  const { Readable } = await import('stream');
+  const stream = Readable.from(data);
+
+  await drive.files.update({
+    fileId,
+    media: {
+      mimeType: 'application/octet-stream',
+      body: stream,
+    },
+  });
+}
+
+/**
+ * Get or create the vault files index in appDataFolder
+ */
+export async function getOrCreateVaultIndex(): Promise<{ id: string; isNew: boolean }> {
+  const indexFileName = 'slasshy_vault_index.json';
+
+  const existingId = await findAppDataFile(indexFileName);
+  if (existingId) {
+    return { id: existingId, isNew: false };
+  }
+
+  // Create empty index
+  const emptyIndex = JSON.stringify({ files: {}, version: '2.0.0' });
+  const id = await uploadBufferToAppData(Buffer.from(emptyIndex, 'utf-8'), indexFileName);
+
+  return { id, isNew: true };
+}
+
+/**
+ * Check if appDataFolder scope is available (user may need to re-auth)
+ */
+export async function hasAppDataAccess(): Promise<boolean> {
+  try {
+    const drive = getDriveClient();
+    await drive.files.list({
+      spaces: 'appDataFolder',
+      pageSize: 1,
+    });
+    return true;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('insufficient')) {
+      return false;
+    }
+    throw error;
+  }
+}
+

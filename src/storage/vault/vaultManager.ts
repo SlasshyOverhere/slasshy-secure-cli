@@ -1,4 +1,5 @@
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
@@ -457,19 +458,36 @@ function calculateChecksum(data: Buffer): string {
 }
 
 /**
- * Add a file entry to the vault
+ * Calculate file checksum from stream (SHA-256)
+ */
+async function calculateChecksumFromFile(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fsSync.createReadStream(filePath);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('error', reject);
+  });
+}
+
+// Chunk size for large files (20MB to stay well under string limits)
+const CHUNK_SIZE = 20 * 1024 * 1024;
+
+/**
+ * Add a file entry to the vault (supports large files via chunking)
  */
 export async function addFileEntry(
   title: string,
   filePath: string,
-  notes?: string
+  notes?: string,
+  onProgress?: (bytesProcessed: number, totalBytes: number) => void
 ): Promise<FileEntry> {
   if (!isUnlocked() || !vaultIndex) {
     throw new Error('Vault is locked');
   }
 
-  // Read file
-  const fileData = await fs.readFile(filePath);
+  const stats = await fs.stat(filePath);
+  const fileSize = stats.size;
   const fileName = path.basename(filePath);
   const ext = path.extname(fileName).toLowerCase();
 
@@ -512,13 +530,15 @@ export async function addFileEntry(
   };
 
   const mimeType = mimeTypes[ext] || 'application/octet-stream';
-  const checksum = calculateChecksum(fileData);
+
+  // Calculate checksum using streaming to avoid memory issues
+  const checksum = await calculateChecksumFromFile(filePath);
 
   // Create file entry metadata
   const entry = createFileEntry(title, {
     originalName: fileName,
     mimeType,
-    size: fileData.length,
+    size: fileSize,
     checksum,
     notes,
   });
@@ -529,8 +549,55 @@ export async function addFileEntry(
   // Encrypt the file entry metadata
   const encryptedEntry = encryptObject(entry, entryKey, entry.id);
 
-  // Encrypt the file data separately (as base64 payload)
-  const encryptedFileData = encryptToPayload(fileData, entryKey, entry.id);
+  // Prepare directories
+  const filesDir = path.join(VAULT_DIR, 'files');
+  await fs.mkdir(path.join(VAULT_DIR, 'entries'), { recursive: true });
+  await fs.mkdir(filesDir, { recursive: true });
+
+  // Determine if we need chunking
+  const needsChunking = fileSize > CHUNK_SIZE;
+  const chunkCount = needsChunking ? Math.ceil(fileSize / CHUNK_SIZE) : 1;
+
+  if (needsChunking) {
+    // Process file in chunks for large files
+    const fileHandle = await fs.open(filePath, 'r');
+    let bytesProcessed = 0;
+
+    try {
+      for (let i = 0; i < chunkCount; i++) {
+        const chunkBuffer = Buffer.alloc(Math.min(CHUNK_SIZE, fileSize - bytesProcessed));
+        await fileHandle.read(chunkBuffer, 0, chunkBuffer.length, bytesProcessed);
+
+        // Encrypt this chunk
+        const encryptedChunk = encryptToPayload(chunkBuffer, entryKey, `${entry.id}_chunk_${i}`);
+
+        // Write chunk to separate file
+        const chunkPath = path.join(filesDir, `${entry.id}_${i}.bin`);
+        await fs.writeFile(chunkPath, encryptedChunk, 'utf-8');
+
+        bytesProcessed += chunkBuffer.length;
+        if (onProgress) {
+          onProgress(bytesProcessed, fileSize);
+        }
+      }
+    } finally {
+      await fileHandle.close();
+    }
+  } else {
+    // Small file - use original approach
+    const fileData = await fs.readFile(filePath);
+    const encryptedFileData = encryptToPayload(fileData, entryKey, entry.id);
+    const fileDataPath = path.join(filesDir, `${entry.id}.bin`);
+    await fs.writeFile(fileDataPath, encryptedFileData, 'utf-8');
+
+    if (onProgress) {
+      onProgress(fileSize, fileSize);
+    }
+  }
+
+  // Store encrypted entry metadata
+  const entryPath = path.join(VAULT_DIR, 'entries', `${entry.id}.enc`);
+  await fs.writeFile(entryPath, encryptedEntry, 'utf-8');
 
   // Create index entry
   const indexEntry: IndexEntry = {
@@ -539,22 +606,12 @@ export async function addFileEntry(
     fragments: [],
     carrierType: 'png',
     localPath: undefined,
-    fileSize: fileData.length,
+    fileSize: fileSize,
     mimeType,
+    chunkCount: needsChunking ? chunkCount : undefined,
     created: entry.created,
     modified: entry.modified,
   };
-
-  // Store encrypted entry metadata
-  const entryPath = path.join(VAULT_DIR, 'entries', `${entry.id}.enc`);
-  await fs.mkdir(path.join(VAULT_DIR, 'entries'), { recursive: true });
-  await fs.writeFile(entryPath, encryptedEntry, 'utf-8');
-
-  // Store encrypted file data
-  const filesDir = path.join(VAULT_DIR, 'files');
-  await fs.mkdir(filesDir, { recursive: true });
-  const fileDataPath = path.join(filesDir, `${entry.id}.bin`);
-  await fs.writeFile(fileDataPath, encryptedFileData, 'utf-8');
 
   // Update index
   vaultIndex.entries[entry.id] = indexEntry;
@@ -592,9 +649,12 @@ export async function getFileEntry(id: string): Promise<FileEntry | null> {
 }
 
 /**
- * Get the decrypted file data by entry ID
+ * Get the decrypted file data by entry ID (supports chunked files)
  */
-export async function getFileData(id: string): Promise<Buffer | null> {
+export async function getFileData(
+  id: string,
+  onProgress?: (bytesProcessed: number, totalBytes: number) => void
+): Promise<Buffer | null> {
   if (!isUnlocked() || !vaultIndex) {
     throw new Error('Vault is locked');
   }
@@ -604,12 +664,42 @@ export async function getFileData(id: string): Promise<Buffer | null> {
     return null;
   }
 
-  const fileDataPath = path.join(VAULT_DIR, 'files', `${id}.bin`);
+  const entryKey = getEntryKey();
+  const filesDir = path.join(VAULT_DIR, 'files');
 
   try {
-    const encryptedData = await fs.readFile(fileDataPath, 'utf-8');
-    const entryKey = getEntryKey();
-    return decryptFromPayload(encryptedData, entryKey, id);
+    // Check if this is a chunked file
+    if (indexEntry.chunkCount && indexEntry.chunkCount > 1) {
+      // Reassemble chunked file
+      const chunks: Buffer[] = [];
+      let bytesProcessed = 0;
+      const totalBytes = indexEntry.fileSize || 0;
+
+      for (let i = 0; i < indexEntry.chunkCount; i++) {
+        const chunkPath = path.join(filesDir, `${id}_${i}.bin`);
+        const encryptedChunk = await fs.readFile(chunkPath, 'utf-8');
+        const decryptedChunk = decryptFromPayload(encryptedChunk, entryKey, `${id}_chunk_${i}`);
+        chunks.push(decryptedChunk);
+
+        bytesProcessed += decryptedChunk.length;
+        if (onProgress) {
+          onProgress(bytesProcessed, totalBytes);
+        }
+      }
+
+      return Buffer.concat(chunks);
+    } else {
+      // Single file (not chunked)
+      const fileDataPath = path.join(filesDir, `${id}.bin`);
+      const encryptedData = await fs.readFile(fileDataPath, 'utf-8');
+      const result = decryptFromPayload(encryptedData, entryKey, id);
+
+      if (onProgress && indexEntry.fileSize) {
+        onProgress(indexEntry.fileSize, indexEntry.fileSize);
+      }
+
+      return result;
+    }
   } catch {
     return null;
   }

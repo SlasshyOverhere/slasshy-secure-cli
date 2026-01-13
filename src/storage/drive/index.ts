@@ -16,6 +16,17 @@ export {
   createFolder,
   findFolder,
   getOrCreateFolder,
+  // Hidden appDataFolder functions
+  uploadToAppData,
+  uploadBufferToAppData,
+  listAppDataFiles,
+  findAppDataFile,
+  downloadFromAppData,
+  downloadAppDataToBuffer,
+  deleteFromAppData,
+  updateAppDataFile,
+  getOrCreateVaultIndex,
+  hasAppDataAccess,
 } from './driveClient.js';
 
 export {
@@ -26,3 +37,14 @@ export {
   syncWithDrive,
   getSyncStatus,
 } from './synchronizer.js';
+
+export {
+  uploadFileToCloud,
+  downloadFileFromCloud,
+  deleteFileFromCloud,
+  isFileInCloud,
+  getCloudStorageUsage,
+  isCloudSyncAvailable,
+  type CloudFileChunk,
+  type CloudFileInfo,
+} from './fileSyncService.js';

@@ -69,7 +69,10 @@ app.get('/oauth/start', (req, res) => {
 
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: 'offline',
-    scope: ['https://www.googleapis.com/auth/drive.file'],
+    scope: [
+      'https://www.googleapis.com/auth/drive.file',
+      'https://www.googleapis.com/auth/drive.appdata'  // Hidden app data folder
+    ],
     state: sessionId,
     prompt: 'consent', // Force consent to get refresh token
   });
