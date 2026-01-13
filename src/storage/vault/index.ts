@@ -17,6 +17,8 @@ export {
   getVaultPaths,
   getVaultIndex,
   updateVaultIndex,
+  getTempFilesDir,
+  cleanupTempFiles,
 } from './vaultManager.js';
 
 export {

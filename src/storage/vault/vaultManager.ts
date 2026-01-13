@@ -473,8 +473,36 @@ async function calculateChecksumFromFile(filePath: string): Promise<string> {
 // Chunk size for large files (20MB to stay well under string limits)
 const CHUNK_SIZE = 20 * 1024 * 1024;
 
+// Use temp folder for encrypted chunks (deleted after cloud upload)
+const TEMP_FILES_DIR = path.join(process.env.TEMP || os.tmpdir(), 'slasshy_temp');
+
+/**
+ * Get the temp files directory path
+ */
+export function getTempFilesDir(): string {
+  return TEMP_FILES_DIR;
+}
+
+/**
+ * Clean up temp files for an entry
+ */
+export async function cleanupTempFiles(entryId: string, chunkCount: number): Promise<void> {
+  try {
+    if (chunkCount === 1) {
+      await fs.unlink(path.join(TEMP_FILES_DIR, `${entryId}.bin`)).catch(() => {});
+    } else {
+      for (let i = 0; i < chunkCount; i++) {
+        await fs.unlink(path.join(TEMP_FILES_DIR, `${entryId}_${i}.bin`)).catch(() => {});
+      }
+    }
+  } catch {
+    // Ignore cleanup errors
+  }
+}
+
 /**
  * Add a file entry to the vault (supports large files via chunking)
+ * Files are encrypted to temp folder for cloud upload
  */
 export async function addFileEntry(
   title: string,
@@ -549,10 +577,9 @@ export async function addFileEntry(
   // Encrypt the file entry metadata
   const encryptedEntry = encryptObject(entry, entryKey, entry.id);
 
-  // Prepare directories
-  const filesDir = path.join(VAULT_DIR, 'files');
+  // Prepare directories - use temp folder for encrypted file data
   await fs.mkdir(path.join(VAULT_DIR, 'entries'), { recursive: true });
-  await fs.mkdir(filesDir, { recursive: true });
+  await fs.mkdir(TEMP_FILES_DIR, { recursive: true });
 
   // Determine if we need chunking
   const needsChunking = fileSize > CHUNK_SIZE;
@@ -571,8 +598,8 @@ export async function addFileEntry(
         // Encrypt this chunk
         const encryptedChunk = encryptToPayload(chunkBuffer, entryKey, `${entry.id}_chunk_${i}`);
 
-        // Write chunk to separate file
-        const chunkPath = path.join(filesDir, `${entry.id}_${i}.bin`);
+        // Write chunk to temp folder
+        const chunkPath = path.join(TEMP_FILES_DIR, `${entry.id}_${i}.bin`);
         await fs.writeFile(chunkPath, encryptedChunk, 'utf-8');
 
         bytesProcessed += chunkBuffer.length;
@@ -587,7 +614,7 @@ export async function addFileEntry(
     // Small file - use original approach
     const fileData = await fs.readFile(filePath);
     const encryptedFileData = encryptToPayload(fileData, entryKey, entry.id);
-    const fileDataPath = path.join(filesDir, `${entry.id}.bin`);
+    const fileDataPath = path.join(TEMP_FILES_DIR, `${entry.id}.bin`);
     await fs.writeFile(fileDataPath, encryptedFileData, 'utf-8');
 
     if (onProgress) {
@@ -665,43 +692,55 @@ export async function getFileData(
   }
 
   const entryKey = getEntryKey();
-  const filesDir = path.join(VAULT_DIR, 'files');
+  const filesDir = TEMP_FILES_DIR;
 
-  try {
-    // Check if this is a chunked file
-    if (indexEntry.chunkCount && indexEntry.chunkCount > 1) {
-      // Reassemble chunked file
-      const chunks: Buffer[] = [];
-      let bytesProcessed = 0;
-      const totalBytes = indexEntry.fileSize || 0;
+  // Check if this is a chunked file
+  if (indexEntry.chunkCount && indexEntry.chunkCount > 1) {
+    // Reassemble chunked file
+    const chunks: Buffer[] = [];
+    let bytesProcessed = 0;
+    const totalBytes = indexEntry.fileSize || 0;
 
-      for (let i = 0; i < indexEntry.chunkCount; i++) {
-        const chunkPath = path.join(filesDir, `${id}_${i}.bin`);
-        const encryptedChunk = await fs.readFile(chunkPath, 'utf-8');
-        const decryptedChunk = decryptFromPayload(encryptedChunk, entryKey, `${id}_chunk_${i}`);
-        chunks.push(decryptedChunk);
+    for (let i = 0; i < indexEntry.chunkCount; i++) {
+      const chunkPath = path.join(filesDir, `${id}_${i}.bin`);
 
-        bytesProcessed += decryptedChunk.length;
-        if (onProgress) {
-          onProgress(bytesProcessed, totalBytes);
-        }
+      // Check if chunk file exists
+      try {
+        await fs.access(chunkPath);
+      } catch {
+        throw new Error(`Missing chunk file ${i + 1}/${indexEntry.chunkCount}. File may be corrupted.`);
       }
 
-      return Buffer.concat(chunks);
-    } else {
-      // Single file (not chunked)
-      const fileDataPath = path.join(filesDir, `${id}.bin`);
-      const encryptedData = await fs.readFile(fileDataPath, 'utf-8');
-      const result = decryptFromPayload(encryptedData, entryKey, id);
+      const encryptedChunk = await fs.readFile(chunkPath, 'utf-8');
+      const decryptedChunk = decryptFromPayload(encryptedChunk, entryKey, `${id}_chunk_${i}`);
+      chunks.push(decryptedChunk);
 
-      if (onProgress && indexEntry.fileSize) {
-        onProgress(indexEntry.fileSize, indexEntry.fileSize);
+      bytesProcessed += decryptedChunk.length;
+      if (onProgress) {
+        onProgress(bytesProcessed, totalBytes);
       }
-
-      return result;
     }
-  } catch {
-    return null;
+
+    return Buffer.concat(chunks);
+  } else {
+    // Single file (not chunked)
+    const fileDataPath = path.join(filesDir, `${id}.bin`);
+
+    // Check if file exists
+    try {
+      await fs.access(fileDataPath);
+    } catch {
+      throw new Error('Encrypted file data not found. File may have been deleted.');
+    }
+
+    const encryptedData = await fs.readFile(fileDataPath, 'utf-8');
+    const result = decryptFromPayload(encryptedData, entryKey, id);
+
+    if (onProgress && indexEntry.fileSize) {
+      onProgress(indexEntry.fileSize, indexEntry.fileSize);
+    }
+
+    return result;
   }
 }
 

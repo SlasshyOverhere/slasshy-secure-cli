@@ -45,6 +45,8 @@ export {
   isFileInCloud,
   getCloudStorageUsage,
   isCloudSyncAvailable,
+  streamDownloadToFile,
+  getParallelismInfo,
   type CloudFileChunk,
   type CloudFileInfo,
 } from './fileSyncService.js';

@@ -669,8 +669,34 @@ export async function downloadAppDataToBuffer(fileId: string): Promise<Buffer> {
  * Delete a file from appDataFolder
  */
 export async function deleteFromAppData(fileId: string): Promise<void> {
+  if (!fileId || fileId.trim() === '') {
+    throw new Error('Invalid file ID: empty or undefined');
+  }
+
   const drive = getDriveClient();
-  await drive.files.delete({ fileId });
+
+  try {
+    // First verify the file exists and get its info
+    await drive.files.get({
+      fileId,
+      fields: 'id,name',
+    });
+
+    // Now delete it
+    await drive.files.delete({ fileId });
+  } catch (error: unknown) {
+    // Extract detailed error from Google API response
+    const gaxiosError = error as { response?: { status?: number; data?: { error?: { message?: string; code?: number } } }; message?: string };
+    const status = gaxiosError.response?.status;
+    const apiMessage = gaxiosError.response?.data?.error?.message || gaxiosError.message || 'Unknown error';
+    const apiCode = gaxiosError.response?.data?.error?.code;
+
+    if (status === 404 || apiCode === 404) {
+      throw new Error('not found');
+    }
+
+    throw new Error(`${apiMessage} (status: ${status || apiCode || 'unknown'}, fileId: ${fileId.substring(0, 20)}...)`);
+  }
 }
 
 /**

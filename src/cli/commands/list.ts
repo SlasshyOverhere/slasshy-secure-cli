@@ -9,6 +9,7 @@ import {
 } from '../../storage/vault/index.js';
 import { promptPassword } from '../prompts.js';
 import { initializeKeyManager } from '../../crypto/index.js';
+import { ensureAuthenticated } from '../ensureAuth.js';
 
 /**
  * Format file size for display
@@ -21,28 +22,9 @@ function formatFileSize(bytes: number): string {
 }
 
 export async function listCommand(options?: { filter?: string; type?: string }): Promise<void> {
-  // Check vault exists
-  if (!await vaultExists()) {
-    console.log(chalk.red('\n  No vault found. Run "slasshy init" first.\n'));
+  // Auto-authenticate with Google Drive (also handles vault unlock)
+  if (!await ensureAuthenticated()) {
     return;
-  }
-
-  // Unlock if needed
-  if (!isUnlocked()) {
-    initializeKeyManager();
-    const password = await promptPassword();
-
-    const spinner = ora('Unlocking vault...').start();
-    try {
-      await unlock(password);
-      spinner.succeed('Vault unlocked');
-    } catch (error) {
-      spinner.fail('Failed to unlock vault');
-      if (error instanceof Error) {
-        console.log(chalk.red(`  ${error.message}`));
-      }
-      return;
-    }
   }
 
   // Get entries
@@ -83,33 +65,31 @@ export async function listCommand(options?: { filter?: string; type?: string }):
     if (passwordEntries.length > 0) {
       console.log('');
       console.log(chalk.bold(`  Passwords (${passwordEntries.length})`));
-      console.log(chalk.gray('  ' + '─'.repeat(50)));
+      console.log(chalk.gray('  ' + '─'.repeat(60)));
 
-      const maxTitleLen = Math.min(30, Math.max(...passwordEntries.map(e => e.title.length)));
-
-      for (const entry of passwordEntries) {
+      passwordEntries.forEach((entry, index) => {
+        const num = (index + 1).toString().padStart(2, ' ');
         const title = entry.title.length > 30
           ? entry.title.substring(0, 27) + '...'
-          : entry.title.padEnd(maxTitleLen);
+          : entry.title;
         const date = new Date(entry.modified).toLocaleDateString();
 
-        console.log(`  ${chalk.cyan('🔐')} ${chalk.cyan(title)}  ${chalk.gray(date)}`);
-      }
+        console.log(`  ${chalk.gray(num + '.')} ${chalk.cyan('🔐')} ${chalk.cyan(title.padEnd(30))}  ${chalk.gray(date)}`);
+      });
     }
 
     // Display file entries
     if (fileEntries.length > 0) {
       console.log('');
       console.log(chalk.bold(`  Files (${fileEntries.length})`));
-      console.log(chalk.gray('  ' + '─'.repeat(50)));
+      console.log(chalk.gray('  ' + '─'.repeat(60)));
 
-      const maxTitleLen = Math.min(25, Math.max(...fileEntries.map(e => e.title.length)));
-
-      for (const entry of fileEntries) {
+      fileEntries.forEach((entry, index) => {
         const indexEntry = vaultIndex?.entries[entry.id];
-        const title = entry.title.length > 25
-          ? entry.title.substring(0, 22) + '...'
-          : entry.title.padEnd(maxTitleLen);
+        const num = (index + 1).toString().padStart(2, ' ');
+        const title = entry.title.length > 22
+          ? entry.title.substring(0, 19) + '...'
+          : entry.title;
         const size = indexEntry?.fileSize ? formatFileSize(indexEntry.fileSize) : '';
         const date = new Date(entry.modified).toLocaleDateString();
 
@@ -122,12 +102,13 @@ export async function listCommand(options?: { filter?: string; type?: string }):
         else if (mimeType.includes('zip') || mimeType.includes('rar') || mimeType.includes('7z')) icon = '📦';
         else if (mimeType.includes('pdf')) icon = '📕';
 
-        console.log(`  ${chalk.magenta(icon)} ${chalk.magenta(title)}  ${chalk.gray(size.padEnd(10))} ${chalk.gray(date)}`);
-      }
+        console.log(`  ${chalk.yellow(num + '.')} ${chalk.magenta(icon)} ${chalk.magenta(title.padEnd(22))}  ${chalk.gray(size.padEnd(10))} ${chalk.gray(date)}`);
+      });
     }
 
-    console.log(chalk.gray('  ' + '─'.repeat(50)));
-    console.log(chalk.gray(`  Total: ${entries.length} entries (${passwordEntries.length} passwords, ${fileEntries.length} files)\n`));
+    console.log(chalk.gray('  ' + '─'.repeat(60)));
+    console.log(chalk.gray(`  Total: ${entries.length} entries (${passwordEntries.length} passwords, ${fileEntries.length} files)`));
+    console.log(chalk.gray(`  Download files: dl <number> or dl <name>\n`));
   } catch (error) {
     spinner.fail('Failed to list entries');
     if (error instanceof Error) {

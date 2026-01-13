@@ -6,12 +6,12 @@ import {
   getCommand,
   listCommand,
   deleteCommand,
-  syncCommand,
   statusCommand,
   lockCommand,
   authCommand,
   uploadCommand,
   downloadCommand,
+  destructCommand,
 } from './commands/index.js';
 
 const SHELL_PROMPT = chalk.cyan('slasshy') + chalk.gray('> ');
@@ -39,10 +39,10 @@ function showHelp(): void {
   console.log(chalk.white('    delete, rm') + chalk.gray('        Delete an entry'));
   console.log(chalk.white('    upload, up') + chalk.gray('        Upload a file'));
   console.log(chalk.white('    download, dl') + chalk.gray('      Download a file'));
-  console.log(chalk.white('    sync') + chalk.gray('              Sync with Google Drive'));
   console.log(chalk.white('    status') + chalk.gray('            Show vault status'));
   console.log(chalk.white('    auth') + chalk.gray('              Authenticate with Google Drive'));
   console.log(chalk.white('    lock') + chalk.gray('              Lock the vault'));
+  console.log(chalk.red('    destruct') + chalk.gray('          ⚠️  Destroy vault completely'));
   console.log(chalk.white('    help') + chalk.gray('              Show this help'));
   console.log(chalk.white('    exit, quit, q') + chalk.gray('     Exit shell'));
   console.log('');
@@ -88,6 +88,7 @@ async function executeCommand(cmd: string, args: string[]): Promise<boolean> {
         break;
 
       case 'delete':
+      case 'del':
       case 'rm':
         const deleteOptions: { force?: boolean } = {};
         if (args.includes('-f') || args.includes('--force')) deleteOptions.force = true;
@@ -107,13 +108,6 @@ async function executeCommand(cmd: string, args: string[]): Promise<boolean> {
         await downloadCommand(downloadSearch);
         break;
 
-      case 'sync':
-        const syncOptions: { push?: boolean; pull?: boolean } = {};
-        if (args.includes('--push')) syncOptions.push = true;
-        if (args.includes('--pull')) syncOptions.pull = true;
-        await syncCommand(syncOptions);
-        break;
-
       case 'status':
         await statusCommand();
         break;
@@ -130,6 +124,12 @@ async function executeCommand(cmd: string, args: string[]): Promise<boolean> {
 
       case 'lock':
         await lockCommand();
+        break;
+
+      case 'destruct':
+      case 'destroy':
+      case 'wipe':
+        await destructCommand();
         break;
 
       case 'help':
@@ -166,6 +166,27 @@ async function executeCommand(cmd: string, args: string[]): Promise<boolean> {
 }
 
 /**
+ * Promisified readline question
+ */
+function askQuestion(rl: readline.Interface, prompt: string): Promise<string> {
+  return new Promise((resolve) => {
+    rl.question(prompt, (answer) => {
+      resolve(answer);
+    });
+  });
+}
+
+/**
+ * Create a new readline interface
+ */
+function createReadline(): readline.Interface {
+  return readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+}
+
+/**
  * Start interactive shell
  */
 export async function startShell(): Promise<void> {
@@ -181,24 +202,17 @@ export async function startShell(): Promise<void> {
   console.log(chalk.bold('  Interactive Shell Mode'));
   console.log(chalk.gray('  Type "help" for commands, "exit" to quit.\n'));
 
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
+  // Main loop
+  let running = true;
+  while (running) {
+    // Create fresh readline for each prompt (avoids conflicts with inquirer)
+    const rl = createReadline();
+    const input = await askQuestion(rl, SHELL_PROMPT);
+    rl.close();
 
-  const prompt = (): void => {
-    rl.question(SHELL_PROMPT, async (input) => {
-      const { cmd, args } = parseCommand(input);
-      const continueRunning = await executeCommand(cmd, args);
+    const { cmd, args } = parseCommand(input);
+    running = await executeCommand(cmd, args);
+  }
 
-      if (continueRunning) {
-        prompt();
-      } else {
-        rl.close();
-        process.exit(0);
-      }
-    });
-  };
-
-  prompt();
+  process.exit(0);
 }

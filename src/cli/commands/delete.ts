@@ -1,57 +1,75 @@
 import chalk from 'chalk';
 import ora from 'ora';
+import inquirer from 'inquirer';
 import {
   vaultExists,
   unlock,
   searchEntries,
   deleteEntry,
+  listEntries,
   isUnlocked,
+  getVaultIndex,
   type Entry,
 } from '../../storage/vault/index.js';
 import { promptPassword, promptConfirm, promptSelectEntry } from '../prompts.js';
 import { initializeKeyManager } from '../../crypto/index.js';
+import { ensureAuthenticated } from '../ensureAuth.js';
+import { deleteFileFromCloud } from '../../storage/drive/index.js';
 
 export async function deleteCommand(
   searchTerm?: string,
   options?: { force?: boolean }
 ): Promise<void> {
-  // Check vault exists
-  if (!await vaultExists()) {
-    console.log(chalk.red('\n  No vault found. Run "slasshy init" first.\n'));
+  // Auto-authenticate with Google Drive (also handles vault unlock)
+  if (!await ensureAuthenticated()) {
     return;
-  }
-
-  // Unlock if needed
-  if (!isUnlocked()) {
-    initializeKeyManager();
-    const password = await promptPassword();
-
-    const spinner = ora('Unlocking vault...').start();
-    try {
-      await unlock(password);
-      spinner.succeed('Vault unlocked');
-    } catch (error) {
-      spinner.fail('Failed to unlock vault');
-      if (error instanceof Error) {
-        console.log(chalk.red(`  ${error.message}`));
-      }
-      return;
-    }
   }
 
   // Search for entries
   const query = searchTerm || '';
   if (!query) {
     console.log(chalk.yellow('\n  Please specify an entry to delete.\n'));
-    console.log(chalk.gray('  Usage: slasshy delete <title>\n'));
+    console.log(chalk.gray('  Usage: slasshy delete <number> or slasshy delete <title>\n'));
     return;
   }
 
   const spinner = ora('Searching...').start();
 
   let entries: Entry[];
+  let entry: Entry | undefined;
+  const vaultIndex = getVaultIndex();
+
   try {
-    entries = await searchEntries(query);
+    // Check if query is a number (file ID)
+    const numIndex = parseInt(query, 10);
+    if (!isNaN(numIndex) && numIndex > 0) {
+      // Get all entries and use index
+      const allEntries = await listEntries();
+
+      // Separate files and passwords like list command does
+      const fileEntries = allEntries.filter(e => vaultIndex?.entries[e.id]?.entryType === 'file');
+      const passwordEntries = allEntries.filter(e => vaultIndex?.entries[e.id]?.entryType !== 'file');
+
+      // Check if it's a valid file index
+      if (numIndex <= fileEntries.length) {
+        const fileEntry = fileEntries[numIndex - 1];
+        if (fileEntry) {
+          // Get the full entry
+          entries = await searchEntries(fileEntry.title);
+          entry = entries.find(e => e.id === fileEntry.id);
+        } else {
+          entries = [];
+        }
+      } else {
+        spinner.stop();
+        console.log(chalk.red(`\n  Invalid file number: ${numIndex}`));
+        console.log(chalk.gray(`  Valid range: 1-${fileEntries.length}. Use "list" to see entries.\n`));
+        return;
+      }
+    } else {
+      // Search by title
+      entries = await searchEntries(query);
+    }
     spinner.stop();
   } catch (error) {
     spinner.fail('Search failed');
@@ -66,19 +84,20 @@ export async function deleteCommand(
     return;
   }
 
-  // Select entry if multiple matches
-  let entry: Entry;
-  if (entries.length === 1) {
-    entry = entries[0]!;
-  } else {
-    console.log(chalk.gray(`\n  Found ${entries.length} entries:\n`));
-    const selectedId = await promptSelectEntry(
-      entries.map(e => ({ id: e.id, title: e.title, modified: e.modified }))
-    );
-    if (!selectedId) {
-      return;
+  // Select entry if multiple matches (and entry not already set by numeric ID)
+  if (!entry) {
+    if (entries.length === 1) {
+      entry = entries[0]!;
+    } else {
+      console.log(chalk.gray(`\n  Found ${entries.length} entries:\n`));
+      const selectedId = await promptSelectEntry(
+        entries.map(e => ({ id: e.id, title: e.title, modified: e.modified }))
+      );
+      if (!selectedId) {
+        return;
+      }
+      entry = entries.find(e => e.id === selectedId)!;
     }
-    entry = entries.find(e => e.id === selectedId)!;
   }
 
   // Confirm deletion
@@ -93,13 +112,55 @@ export async function deleteCommand(
     }
   }
 
-  // Delete entry
+  // Delete entry (local + cloud)
   const deleteSpinner = ora('Deleting entry...').start();
 
   try {
+    // Delete from cloud if it's a file with cloud chunks
+    const indexEntry = vaultIndex?.entries[entry.id];
+    let cloudDeleteFailed = false;
+    let cloudError = '';
+
+    if (indexEntry?.entryType === 'file' && indexEntry.cloudChunks && indexEntry.cloudChunks.length > 0) {
+      deleteSpinner.text = 'Deleting from cloud...';
+      try {
+        await deleteFileFromCloud(entry.id, indexEntry.cloudChunks);
+      } catch (error) {
+        cloudDeleteFailed = true;
+        cloudError = error instanceof Error ? error.message : 'Unknown error';
+      }
+    }
+
+    if (cloudDeleteFailed) {
+      deleteSpinner.warn('Cloud deletion failed');
+      console.log(chalk.yellow(`\n  ${cloudError}\n`));
+
+      // Ask if user wants to delete locally anyway
+      const { proceedLocal } = await inquirer.prompt<{ proceedLocal: boolean }>([
+        {
+          type: 'confirm',
+          name: 'proceedLocal',
+          message: 'Delete local entry anyway? (Cloud files may remain)',
+          default: true,
+        },
+      ]);
+
+      if (!proceedLocal) {
+        console.log(chalk.gray('\n  Cancelled.\n'));
+        return;
+      }
+    }
+
+    // Delete local entry
+    deleteSpinner.start('Deleting local entry...');
     await deleteEntry(entry.id);
     deleteSpinner.succeed('Entry deleted');
-    console.log(chalk.green(`\n  "${entry.title}" has been deleted.\n`));
+
+    if (cloudDeleteFailed) {
+      console.log(chalk.yellow(`\n  "${entry.title}" deleted locally. Cloud files may need manual cleanup.\n`));
+    } else {
+      console.log(chalk.green(`\n  "${entry.title}" has been deleted from local and cloud.\n`));
+    }
   } catch (error) {
     deleteSpinner.fail('Failed to delete entry');
     if (error instanceof Error) {

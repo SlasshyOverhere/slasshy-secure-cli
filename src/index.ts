@@ -8,12 +8,12 @@ import {
   getCommand,
   listCommand,
   deleteCommand,
-  syncCommand,
   statusCommand,
   lockCommand,
   authCommand,
   uploadCommand,
   downloadCommand,
+  destructCommand,
 } from './cli/commands/index.js';
 import { startShell } from './cli/shell.js';
 
@@ -102,17 +102,6 @@ program
     await deleteCommand(search, options);
   });
 
-// Sync command
-program
-  .command('sync')
-  .description('Sync vault with Google Drive')
-  .option('--push', 'Push local changes only')
-  .option('--pull', 'Pull remote changes only')
-  .option('--carrier-dir <path>', 'Directory containing carrier images')
-  .action(async (options) => {
-    await syncCommand(options);
-  });
-
 // Status command
 program
   .command('status')
@@ -137,6 +126,14 @@ program
   .option('-l, --logout', 'Disconnect from Google Drive')
   .action(async (options) => {
     await authCommand(options);
+  });
+
+// Destruct command
+program
+  .command('destruct')
+  .description('⚠️  Permanently destroy vault (local + cloud)')
+  .action(async () => {
+    await destructCommand();
   });
 
 // Check for interactive shell mode (no arguments)
