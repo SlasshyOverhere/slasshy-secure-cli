@@ -2,6 +2,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
+import { createRequire } from 'module';
 import {
   initCommand,
   addCommand,
@@ -16,6 +17,11 @@ import {
   destructCommand,
 } from './cli/commands/index.js';
 import { startShell } from './cli/shell.js';
+
+// Get version from package.json
+const require = createRequire(import.meta.url);
+const pkg = require('../package.json');
+const VERSION = pkg.version;
 
 const program = new Command();
 
@@ -32,7 +38,7 @@ const banner = `
 program
   .name('slasshy')
   .description('Military-grade secure storage with steganography & Google Drive sync')
-  .version('1.3.0')
+  .version(VERSION, '-v, --version', 'Show version number')
   .addHelpText('before', chalk.cyan(banner));
 
 // Init command
@@ -134,6 +140,14 @@ program
   .description('⚠️  Permanently destroy vault (local + cloud)')
   .action(async () => {
     await destructCommand();
+  });
+
+// Version command (explicit)
+program
+  .command('version')
+  .description('Show version number')
+  .action(() => {
+    console.log(chalk.cyan(`\n  Slasshy v${VERSION}\n`));
   });
 
 // Check for interactive shell mode (no arguments)

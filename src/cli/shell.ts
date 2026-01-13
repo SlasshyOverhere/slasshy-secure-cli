@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import readline from 'readline';
+import { createRequire } from 'module';
 import {
   initCommand,
   addCommand,
@@ -13,6 +14,11 @@ import {
   downloadCommand,
   destructCommand,
 } from './commands/index.js';
+
+// Get version from package.json
+const require = createRequire(import.meta.url);
+const pkg = require('../../package.json');
+const VERSION = pkg.version;
 
 const SHELL_PROMPT = chalk.cyan('slasshy') + chalk.gray('> ');
 
@@ -43,6 +49,7 @@ function showHelp(): void {
   console.log(chalk.white('    auth') + chalk.gray('              Authenticate with Google Drive'));
   console.log(chalk.white('    lock') + chalk.gray('              Lock the vault'));
   console.log(chalk.red('    destruct') + chalk.gray('          ⚠️  Destroy vault completely'));
+  console.log(chalk.white('    version') + chalk.gray('           Show version number'));
   console.log(chalk.white('    help') + chalk.gray('              Show this help'));
   console.log(chalk.white('    exit, quit, q') + chalk.gray('     Exit shell'));
   console.log('');
@@ -130,6 +137,12 @@ async function executeCommand(cmd: string, args: string[]): Promise<boolean> {
       case 'destroy':
       case 'wipe':
         await destructCommand();
+        break;
+
+      case 'version':
+      case 'ver':
+      case '-v':
+        console.log(chalk.cyan(`\n  Slasshy v${VERSION}\n`));
         break;
 
       case 'help':
