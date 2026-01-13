@@ -1,6 +1,6 @@
 {
   "name": "slasshy-secure-cli",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "Military-grade secure storage with steganography & Google Drive sync",
   "main": "dist/index.js",
   "bin": {

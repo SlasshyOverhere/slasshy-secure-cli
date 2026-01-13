@@ -34,7 +34,7 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Setup Node.js for npm
+      - name: Setup Node.js
         if: steps.check_tag.outputs.exists == 'false'
         uses: actions/setup-node@v4
         with:
@@ -65,27 +65,23 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Setup Node.js for GitHub Packages
-        if: steps.check_tag.outputs.exists == 'false'
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          registry-url: 'https://npm.pkg.github.com'
-          scope: '@slasshyoverhere'
-
       - name: Publish to GitHub Packages
         if: steps.check_tag.outputs.exists == 'false'
         run: |
+          # Create .npmrc for GitHub Packages
+          echo "//npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}" > ~/.npmrc
+          echo "@slasshyoverhere:registry=https://npm.pkg.github.com" >> ~/.npmrc
+
           # Temporarily update package.json for scoped publish
           node -e "
             const pkg = require('./package.json');
             pkg.name = '@slasshyoverhere/slasshy-secure-cli';
-            pkg.publishConfig = { registry: 'https://npm.pkg.github.com' };
+            delete pkg.publishConfig;
             require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2));
           "
-          npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          # Publish without running prepublishOnly again (already built)
+          npm publish --access public --ignore-scripts
 
       - name: Skip (version already released)
         if: steps.check_tag.outputs.exists == 'true'
