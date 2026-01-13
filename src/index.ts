@@ -15,6 +15,7 @@ import {
   uploadCommand,
   downloadCommand,
 } from './cli/commands/index.js';
+import { startShell } from './cli/shell.js';
 
 const program = new Command();
 
@@ -138,15 +139,10 @@ program
     await authCommand(options);
   });
 
-// Parse arguments
-program.parse();
-
-// Show help if no command
+// Check for interactive shell mode (no arguments)
 if (!process.argv.slice(2).length) {
-  console.log(chalk.cyan(banner));
-  console.log(chalk.bold('  Military-grade encrypted storage with steganography\n'));
-  console.log(chalk.gray('  Your secrets are encrypted locally, then hidden inside'));
-  console.log(chalk.gray('  innocent-looking images before uploading to Google Drive.'));
-  console.log(chalk.gray('  Even Google cannot see what you\'re storing.\n'));
-  program.outputHelp();
+  startShell();
+} else {
+  // Parse arguments for CLI mode
+  program.parse();
 }
