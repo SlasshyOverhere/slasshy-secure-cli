@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: write
-  packages: write
 
 jobs:
   check-and-publish:
@@ -59,29 +58,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish to npm (npmjs.org)
+      - name: Publish to npm
         if: steps.check_tag.outputs.exists == 'false'
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Publish to GitHub Packages
-        if: steps.check_tag.outputs.exists == 'false'
-        run: |
-          # Create .npmrc for GitHub Packages
-          echo "//npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}" > ~/.npmrc
-          echo "@slasshyoverhere:registry=https://npm.pkg.github.com" >> ~/.npmrc
-
-          # Temporarily update package.json for scoped publish
-          node -e "
-            const pkg = require('./package.json');
-            pkg.name = '@slasshyoverhere/slasshy-secure-cli';
-            delete pkg.publishConfig;
-            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2));
-          "
-
-          # Publish without running prepublishOnly again (already built)
-          npm publish --access public --ignore-scripts
 
       - name: Skip (version already released)
         if: steps.check_tag.outputs.exists == 'true'
