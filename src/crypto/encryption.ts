@@ -67,13 +67,13 @@ export function decrypt(
 }
 
 /**
- * Encrypt and serialize to base64 payload
+ * Encrypt and serialize to Buffer payload (IV + Ciphertext + AuthTag)
  */
-export function encryptToPayload(
+export function encryptToBuffer(
   plaintext: string | Buffer,
   key: Buffer,
   aad?: string
-): string {
+): Buffer {
   const plaintextBuffer = typeof plaintext === 'string'
     ? Buffer.from(plaintext, 'utf-8')
     : plaintext;
@@ -82,25 +82,21 @@ export function encryptToPayload(
   const encrypted = encrypt(plaintextBuffer, key, aadBuffer);
 
   // Combine: IV (12) + Ciphertext + AuthTag (16)
-  const combined = Buffer.concat([
+  return Buffer.concat([
     encrypted.iv,
     encrypted.ciphertext,
     encrypted.authTag,
   ]);
-
-  return combined.toString('base64');
 }
 
 /**
- * Decrypt from base64 payload
+ * Decrypt from Buffer payload (IV + Ciphertext + AuthTag)
  */
-export function decryptFromPayload(
-  payload: string,
+export function decryptFromBuffer(
+  combined: Buffer,
   key: Buffer,
   aad?: string
 ): Buffer {
-  const combined = Buffer.from(payload, 'base64');
-
   if (combined.length < IV_LENGTH + AUTH_TAG_LENGTH) {
     throw new Error('Invalid encrypted payload: too short');
   }
@@ -112,6 +108,29 @@ export function decryptFromPayload(
   const aadBuffer = aad ? Buffer.from(aad, 'utf-8') : undefined;
 
   return decrypt({ iv, ciphertext, authTag }, key, aadBuffer);
+}
+
+/**
+ * Encrypt and serialize to base64 payload
+ */
+export function encryptToPayload(
+  plaintext: string | Buffer,
+  key: Buffer,
+  aad?: string
+): string {
+  return encryptToBuffer(plaintext, key, aad).toString('base64');
+}
+
+/**
+ * Decrypt from base64 payload
+ */
+export function decryptFromPayload(
+  payload: string,
+  key: Buffer,
+  aad?: string
+): Buffer {
+  const combined = Buffer.from(payload, 'base64');
+  return decryptFromBuffer(combined, key, aad);
 }
 
 /**
