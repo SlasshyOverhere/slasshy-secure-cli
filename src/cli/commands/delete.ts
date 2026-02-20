@@ -50,20 +50,45 @@ export async function deleteCommand(
       const fileEntries = allEntries.filter(e => vaultIndex?.entries[e.id]?.entryType === 'file');
       const passwordEntries = allEntries.filter(e => vaultIndex?.entries[e.id]?.entryType !== 'file');
 
-      // Check if it's a valid file index
-      if (numIndex <= fileEntries.length) {
-        const fileEntry = fileEntries[numIndex - 1];
-        if (fileEntry) {
-          // Get the full entry
-          entries = await searchEntries(fileEntry.title);
-          entry = entries.find(e => e.id === fileEntry.id);
-        } else {
-          entries = [];
-        }
+      // Check valid indexes
+      const fileEntry = numIndex <= fileEntries.length ? fileEntries[numIndex - 1] : undefined;
+      const passwordEntry = numIndex <= passwordEntries.length ? passwordEntries[numIndex - 1] : undefined;
+
+      if (fileEntry && passwordEntry) {
+        spinner.stop();
+        // Ambiguous index - ask user
+        console.log(chalk.yellow(`\n  Ambiguous index: ${numIndex} matches both a file and a password.`));
+        const { targetType } = await inquirer.prompt<{ targetType: string }>([
+          {
+            type: 'list',
+            name: 'targetType',
+            message: 'Which one do you want to delete?',
+            choices: [
+              { name: `Password: ${passwordEntry.title}`, value: 'password' },
+              { name: `File: ${fileEntry.title}`, value: 'file' },
+            ],
+          },
+        ]);
+
+        const target = targetType === 'password' ? passwordEntry : fileEntry;
+        entries = await searchEntries(target.title);
+        entry = entries.find(e => e.id === target.id);
+      } else if (fileEntry) {
+        entries = await searchEntries(fileEntry.title);
+        entry = entries.find(e => e.id === fileEntry.id);
+      } else if (passwordEntry) {
+        entries = await searchEntries(passwordEntry.title);
+        entry = entries.find(e => e.id === passwordEntry.id);
       } else {
         spinner.stop();
-        console.log(chalk.red(`\n  Invalid file number: ${numIndex}`));
-        console.log(chalk.gray(`  Valid range: 1-${fileEntries.length}. Use "list" to see entries.\n`));
+        console.log(chalk.red(`\n  Invalid number: ${numIndex}`));
+        if (fileEntries.length > 0) {
+          console.log(chalk.gray(`  Files range: 1-${fileEntries.length}`));
+        }
+        if (passwordEntries.length > 0) {
+          console.log(chalk.gray(`  Passwords range: 1-${passwordEntries.length}`));
+        }
+        console.log(chalk.gray(`  Use "list" to see all entries.\n`));
         return;
       }
     } else {
