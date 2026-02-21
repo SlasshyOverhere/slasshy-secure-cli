@@ -6,6 +6,10 @@
 
 Client-side, zero-knowledge vault for passwords, notes, TOTP secrets, and encrypted files synced to Google Drive.
 
+## CLI Use Case Demo
+
+![BlankDrive CLI use case demo](assets/blankdrive-usecase.gif)
+
 CLI command names after install:
 
 - `blankdrive` (default)
@@ -69,10 +73,6 @@ blankdrive upload
 # 5) List entries
 blankdrive list
 ```
-
-## CLI Use Case Demo
-
-![BlankDrive CLI use case demo](assets/blankdrive-usecase.gif)
 
 ## Primary Use Case
 
