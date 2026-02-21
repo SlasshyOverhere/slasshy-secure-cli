@@ -22,6 +22,32 @@ const VERSION = pkg.version;
 
 const SHELL_PROMPT = chalk.cyan('slasshy') + chalk.gray('> ');
 
+const AVAILABLE_COMMANDS = [
+  'init',
+  'add',
+  'list', 'ls',
+  'get',
+  'delete', 'rm', 'del',
+  'upload', 'up',
+  'download', 'dl',
+  'status',
+  'auth',
+  'lock',
+  'destruct', 'destroy', 'wipe',
+  'version', 'ver',
+  'help', '?',
+  'exit', 'quit', 'q',
+  'clear', 'cls'
+];
+
+/**
+ * Tab completion function
+ */
+function completer(line: string) {
+  const hits = AVAILABLE_COMMANDS.filter((c) => c.startsWith(line));
+  return [hits, line];
+}
+
 /**
  * Parse command string into command and arguments
  */
@@ -52,6 +78,7 @@ function showHelp(): void {
   console.log(chalk.white('    version') + chalk.gray('           Show version number'));
   console.log(chalk.white('    help') + chalk.gray('              Show this help'));
   console.log(chalk.white('    exit, quit, q') + chalk.gray('     Exit shell'));
+  console.log(chalk.white('    clear, cls') + chalk.gray('        Clear screen'));
   console.log('');
 }
 
@@ -196,6 +223,7 @@ function createReadline(): readline.Interface {
   return readline.createInterface({
     input: process.stdin,
     output: process.stdout,
+    completer,
   });
 }
 

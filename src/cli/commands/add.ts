@@ -55,7 +55,6 @@ export async function addCommand(): Promise<void> {
 
     console.log(chalk.green(`\n  Entry "${entry.title}" saved successfully!`));
     console.log(chalk.gray(`  ID: ${entry.id}`));
-    console.log(chalk.gray('\n  Note: Run "slasshy sync" to upload to Google Drive.\n'));
   } catch (error) {
     spinner.fail('Failed to add entry');
     if (error instanceof Error) {
