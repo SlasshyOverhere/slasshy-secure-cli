@@ -27,3 +27,6 @@ coverage/
 
 # Agent reports (internal development notes - never commit!)
 agent-report/
+
+# Remotion workspace (generated media and local tooling)
+remotion/

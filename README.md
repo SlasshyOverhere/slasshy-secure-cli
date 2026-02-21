@@ -70,6 +70,10 @@ blankdrive upload
 blankdrive list
 ```
 
+## CLI Use Case Demo
+
+![BlankDrive CLI use case demo](assets/blankdrive-usecase.gif)
+
 ## Primary Use Case
 
 BlankDrive is designed for people who want cloud-backed file/password storage without sending plaintext to any project backend.
