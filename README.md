@@ -70,6 +70,41 @@ blankdrive upload
 blankdrive list
 ```
 
+## Primary Use Case
+
+BlankDrive is designed for people who want cloud-backed file/password storage without sending plaintext to any project backend.
+
+Typical real-world flow:
+
+1. You create a local vault protected by your master password.
+2. You add passwords, notes, and files locally.
+3. BlankDrive encrypts data on-device, then uploads encrypted blobs to your own Google Drive.
+4. On a new machine, you restore using the same Google account and your master password.
+
+Practical examples:
+
+- Secure personal document vault (IDs, contracts, statements)
+- Encrypted off-device backup of sensitive notes and credentials
+- Cross-device password/note/file access via your own Drive account
+
+## Upload/Download Flow (What Actually Happens)
+
+`blankdrive upload` pipeline:
+
+1. Verifies vault is unlocked and Google OAuth is connected.
+2. Encrypts file locally with vault entry key (AES-256-GCM + AAD).
+3. Chunks large files at 20 MB per chunk.
+4. Uploads encrypted chunks to either:
+   - `BlankDrive/<your-folder>/` (`public` mode), or
+   - `appDataFolder` (`hidden` mode)
+5. Stores encrypted metadata in local vault index.
+
+`blankdrive download` pipeline:
+
+1. Lists encrypted cloud chunks from selected storage mode.
+2. Downloads chunks (parallel with adaptive concurrency based on free RAM).
+3. Decrypts locally and writes restored file to your target path.
+
 ## Google OAuth Setup (Step-by-Step)
 
 BlankDrive needs your own Google OAuth Desktop credentials.
@@ -159,6 +194,8 @@ Notes:
 
 ## Commands
 
+All commands can be run as either `blankdrive ...` or `BLANK ...`.
+
 ### CLI Commands
 
 ```bash
@@ -215,14 +252,49 @@ Restore requires:
 - Correct vault master password
 - Correct storage mode/folder location of your backup
 
-## Security Model
+## Security Specifications
 
-- Zero-knowledge: plaintext never leaves your machine
-- AES-256-GCM authenticated encryption
-- Argon2id key derivation
-- Per-entry encryption context (AAD)
-- Encrypted local storage for OAuth tokens/credentials
-- Optional hidden cloud storage (`appDataFolder`)
+Core crypto and key management:
+
+- Encryption algorithm: AES-256-GCM
+- IV length: 12 bytes
+- Auth tag length: 16 bytes
+- KDF: Argon2id
+- Default Argon2id params: timeCost `3`, memoryCost `65536` (64 MB), parallelism `4`, hashLength `32`
+- Sub-key derivation: HKDF-SHA256 contexts (`index`, `entry`, `metadata`)
+- AAD binding: entry ID or chunk-specific ID (`<entryId>_chunk_<index>`)
+
+Storage and cloud behavior:
+
+- Local vault path: `~/.slasshy/`
+- Encrypted token file: `~/.slasshy/drive_token.enc`
+- Encrypted OAuth credentials: `~/.slasshy/google_oauth_credentials.enc`
+- Cloud scopes: `drive.file` and `drive.appdata`
+- Public mode path: `Google Drive > BlankDrive/<folder>/`
+- Hidden mode path: Google `appDataFolder` (not visible in Drive UI)
+
+Performance-related implementation details:
+
+- File chunk size: 20 MB
+- Parallel upload/download worker limit: 5
+- Adaptive download parallelism:
+  - 5 workers when free RAM > 2 GB
+  - 2 workers when free RAM > 512 MB
+  - 1 worker otherwise
+
+## Trust Boundary and Limits
+
+What BlankDrive does:
+
+- Runs client-side only in this repo (no project-hosted backend required)
+- Sends OAuth/auth API requests directly to Google
+- Encrypts payloads before cloud upload
+
+What BlankDrive does not guarantee:
+
+- If your machine is compromised while vault is unlocked, local secrets can be exposed
+- Losing your master password means encrypted vault data cannot be recovered
+- Hidden mode (`appDataFolder`) improves visibility/privacy in Drive UI, but is not a substitute for endpoint security
 
 ## Troubleshooting
 

@@ -174,3 +174,50 @@ jobs:
       - name: Skip (already published and released)
         if: steps.work.outputs.required == 'false'
         run: echo "Version v${{ steps.package.outputs.version }} is already published on npm and has a GitHub release."
+
+      - name: Release summary
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.package.outputs.version }}"
+          TAG="v${VERSION}"
+
+          RELEASE_URL="$(gh release view "${TAG}" --json url --jq '.url' 2>/dev/null || true)"
+          NPM_VERSION_PUBLISHED="$(npm view "blankdrive@${VERSION}" version 2>/dev/null || true)"
+          NPM_LATEST="$(npm view blankdrive dist-tags.latest 2>/dev/null || true)"
+
+          if [ -n "${RELEASE_URL}" ]; then
+            if [ "${{ steps.check_release.outputs.exists }}" = "false" ]; then
+              RELEASE_STATUS="created in this run"
+            else
+              RELEASE_STATUS="already existed"
+            fi
+          else
+            RELEASE_STATUS="missing after run"
+          fi
+
+          if [ "${NPM_VERSION_PUBLISHED}" = "${VERSION}" ]; then
+            if [ "${{ steps.check_npm.outputs.exists }}" = "false" ]; then
+              NPM_STATUS="published in this run"
+            else
+              NPM_STATUS="already existed"
+            fi
+          else
+            NPM_STATUS="missing after run"
+          fi
+
+          {
+            echo "## Release Summary"
+            echo
+            echo "- Version: \`${VERSION}\`"
+            echo "- Tag exists: \`${{ steps.check_tag.outputs.exists }}\`"
+            echo "- GitHub release status: ${RELEASE_STATUS}"
+            if [ -n "${RELEASE_URL}" ]; then
+              echo "- GitHub release URL: ${RELEASE_URL}"
+            fi
+            echo "- npm publish status: ${NPM_STATUS}"
+            if [ -n "${NPM_LATEST}" ]; then
+              echo "- npm dist-tag latest: \`${NPM_LATEST}\`"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
