@@ -1,355 +1,262 @@
-# BlankDrive - Military-Grade Secure Storage
+# BlankDrive
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub release](https://img.shields.io/github/v/release/SlasshyOverhere/BlankDrive)](https://github.com/SlasshyOverhere/BlankDrive/releases)
 [![Node.js CI](https://github.com/SlasshyOverhere/BlankDrive/actions/workflows/ci.yml/badge.svg)](https://github.com/SlasshyOverhere/BlankDrive/actions/workflows/ci.yml)
 
-A zero-knowledge encrypted vault that stores your sensitive data (passwords, files, documents) in Google Drive using either hidden `appDataFolder` storage or a visible `BlankDrive/<your-folder>/` path.
+Client-side, zero-knowledge vault for passwords, notes, TOTP secrets, and encrypted files synced to Google Drive.
 
-## Features
+## Client-Only Architecture
 
-- **AES-256-GCM Encryption** - Military-grade authenticated encryption
-- **Argon2id Key Derivation** - Memory-hard KDF resistant to brute force
-- **Flexible Cloud Storage** - Choose hidden appDataFolder or visible `BlankDrive` folder
-- **Auto Cloud Sync** - Files automatically sync to cloud on upload
-- **Large File Support** - Chunked uploads/downloads with parallel processing
-- **Progress Tracking** - Real-time speed, ETA, and progress bars
-- **Interactive Shell** - Run multiple commands without re-invoking CLI
-- **Zero-Knowledge** - Your master password never leaves your device
-- **Cloud Restore** - Restore your vault on any device from cloud backup
+BlankDrive is fully client-side:
 
-## How It Works
+- No backend auth server
+- No remote token broker
+- OAuth runs locally with Google directly (loopback + PKCE)
+- OAuth credentials and tokens are encrypted and stored on your machine
 
-1. Your data is encrypted locally with AES-256-GCM
-2. Encrypted chunks are uploaded to Google Drive in either hidden `appDataFolder` or visible `BlankDrive/<your-folder>/`
-3. The appDataFolder is **invisible** in Drive UI - only your app can access it
-4. Metadata is encrypted and synced for cross-device restore
-5. **Even Google cannot see what you're storing**
+## Tech Stack
 
-## Installation
+- TypeScript + Node.js CLI
+- AES-256-GCM for encryption
+- Argon2id for key derivation
+- Google Drive API (`drive.file` + `drive.appdata`)
+- Local OAuth loopback callback (`127.0.0.1`) with PKCE
+
+## Requirements
+
+- Node.js 18+ (22 recommended)
+- npm
+- Google account
+- Google Cloud project with Drive API enabled
+
+## Install
 
 ```bash
 npm install -g blankdrive
 ```
 
-### From Source
+Or from source:
 
 ```bash
-# Clone the repository
 git clone https://github.com/SlasshyOverhere/BlankDrive.git
 cd BlankDrive
-
-# Install dependencies
 npm install
-
-# Build
 npm run build
-
-# Link globally
 npm link
 ```
 
 ## Quick Start
 
 ```bash
-# Initialize your vault
+# 1) Initialize vault
 BLANK init
 
-# Connect to Google Drive (required for cloud sync)
+# 2) Configure Google OAuth + connect Drive
 BLANK auth
 
-# Add a password entry
+# 3) Add password
 BLANK add
 
-# Upload any file (auto-syncs to cloud)
-BLANK upload ./secret-document.pdf
+# 4) Upload encrypted file
+BLANK upload
 
-# List all entries
+# 5) List entries
 BLANK list
-
-# Retrieve a password entry
-BLANK get "GitHub" --copy
-
-# Download a file
-BLANK download 1              # By number
-BLANK download "document"     # By name
-
-# Check vault status
-BLANK status
-
-# Lock vault (clears keys from memory)
-BLANK lock
-
-# Interactive shell mode
-BLANK shell
 ```
 
-## Commands
+## Google OAuth Setup (Step-by-Step)
 
-| Command | Alias | Description |
-|---------|-------|-------------|
-| `init` | | Initialize a new encrypted vault |
-| `init --restore` | | Restore vault from cloud backup |
-| `add` | | Add a new password entry |
-| `upload [file]` | `up` | Upload any file (auto-syncs to cloud) |
-| `get <search>` | | Retrieve a password entry |
-| `download [search]` | `dl` | Download a file from vault |
-| `list` | `ls` | List all entries (passwords & files) |
-| `delete <search>` | `rm`, `del` | Delete an entry (local + cloud) |
-| `auth` | | Authenticate with Google Drive |
-| `settings` | | App settings (cloud storage mode + public folder name) |
-| `status` | | Show vault and cloud status |
-| `lock` | | Lock vault and clear keys |
-| `destruct` | | Permanently destroy vault (local + cloud) |
-| `shell` | | Start interactive shell mode |
+BlankDrive needs your own Google OAuth Desktop credentials.
 
-### Command Options
+### 1. Create or select a Google Cloud project
 
-```bash
-# List only files or passwords
-BLANK list --type files
-BLANK list --type passwords
+- Open: https://console.cloud.google.com/
 
-# Filter by name
-BLANK list --filter "github"
+### 2. Enable Google Drive API
 
-# Copy password to clipboard
-BLANK get "GitHub" --copy
+- Direct link: https://console.cloud.google.com/apis/library/drive.googleapis.com
 
-# Show password in output
-BLANK get "GitHub" --show-password
+### 3. Configure OAuth consent screen
 
-# Delete by number
-BLANK delete 1
-BLANK del 3
+- Google guide: https://developers.google.com/workspace/guides/configure-oauth-consent
+- Console shortcut: https://console.cloud.google.com/apis/credentials/consent
 
-# Force delete without confirmation
-BLANK delete "entry" --force
+Recommended:
 
-# One-time Google OAuth setup (bring your own credentials)
-BLANK auth --setup
+- App type: External (or Internal for Workspace org use)
+- Add your email and app name
+- Add test users (if app is not published)
 
-# Change cloud storage mode manually later
-BLANK settings --storage hidden
-BLANK settings --storage public
-BLANK settings --folder my-device
-BLANK settings --storage public --folder my-device
+### 4. Create OAuth Client ID (Desktop app)
 
-# Logout from Google Drive
-BLANK auth --logout
+- Google guide: https://developers.google.com/workspace/guides/create-credentials
+- Console shortcut: https://console.cloud.google.com/apis/credentials
+- Select: `Create Credentials` -> `OAuth client ID` -> `Desktop app`
 
-# Restore vault from cloud
-BLANK init --restore
-```
+Important:
 
-## Interactive Shell Mode
+- Use `Desktop app`, not `Web application`
+- BlankDrive uses loopback redirect (`http://127.0.0.1:<dynamic-port>`)
 
-Start an interactive session to run multiple commands without re-invoking the CLI:
-
-```bash
-BLANK shell
-```
-
-```
-  ██████╗ ██╗      █████╗ ███╗   ██╗██╗  ██╗
-  ██╔══██╗██║     ██╔══██╗████╗  ██║██║ ██╔╝
-  ██████╔╝██║     ███████║██╔██╗ ██║█████╔╝
-  ██╔══██╗██║     ██╔══██║██║╚██╗██║██╔═██╗
-  ██████╔╝███████╗██║  ██║██║ ╚████║██║  ██╗
-  ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝
-     ██████╗ ██████╗ ██╗██╗   ██╗███████╗
-     ██╔══██╗██╔══██╗██║██║   ██║██╔════╝
-     ██║  ██║██████╔╝██║██║   ██║█████╗
-     ██║  ██║██╔══██╗██║╚██╗ ██╔╝██╔══╝
-     ██████╔╝██║  ██║██║ ╚████╔╝ ███████╗
-     ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝  ╚══════╝
-
-BLANK> list
-BLANK> upload ./file.pdf
-BLANK> download 1
-BLANK> exit
-```
-
-## Cloud Backup & Restore
-
-Your vault metadata is automatically backed up to the cloud. Restore on any device:
-
-```bash
-# On a new device, restore from cloud
-BLANK init --restore
-
-# OAuth runs automatically if needed
-# Enter your Google credentials when prompted (first time)
-# Then enter your master password
-# Vault metadata and file index restored from cloud
-# Download files on-demand with: BLANK download <name>
-```
-
-## File Upload Support
-
-Upload any file type - they're encrypted and stored in your selected cloud storage mode:
-
-- **Video**: MP4, MKV, AVI, MOV, WebM
-- **Audio**: MP3, WAV, FLAC, OGG
-- **Images**: JPG, PNG, GIF, WebP
-- **Documents**: PDF, DOC, DOCX, XLS, XLSX, PPT
-- **Archives**: ZIP, RAR, 7z, TAR, GZ
-- **Code**: JS, TS, JSON, XML, HTML, CSS
-- **Any other file type**
-
-### Large File Support
-
-Files are automatically chunked for reliable upload/download:
-- Parallel processing (up to 5 concurrent chunks)
-- Adaptive parallelism based on available RAM
-- Resume support for interrupted transfers
-- Real-time progress with speed and ETA
-
-## Google OAuth Setup (No Backend Required)
-
-BlankDrive now uses direct local OAuth for Google Drive.
-
-- No backend URL needed
-- Each user brings their own Google OAuth Client ID/Secret
-- OAuth tokens and client credentials are encrypted and stored locally
-- If credentials are missing, `BLANK auth` prompts for them automatically first
-
-### 1. Create Your Google OAuth App
-
-1. Open [Google Cloud Console](https://console.cloud.google.com/).
-2. Create a new project (or select an existing one).
-3. Go to **APIs & Services > Library** and enable **Google Drive API**.
-4. Go to **APIs & Services > OAuth consent screen** and configure:
-   - App name and support email
-   - Add scopes:
-     - `https://www.googleapis.com/auth/drive.file`
-     - `https://www.googleapis.com/auth/drive.appdata`
-   - Add your Google account as a **Test user** if app is in Testing mode
-5. Go to **APIs & Services > Credentials** and create an **OAuth client ID**.
-6. Choose **Application type: Desktop app** (important).
-7. Copy your **Client ID** and **Client Secret**.
-
-### 2. Configure BlankDrive
-
-Run:
+### 5. Run auth in BlankDrive
 
 ```bash
 BLANK auth
 ```
 
-Then:
-1. Paste your Client ID.
-2. Paste your Client Secret.
-3. Browser opens automatically.
-4. Sign in and approve Google Drive access.
-5. Return to terminal when complete.
+You will be prompted for:
 
-### 3. Reconfigure / Rotate Credentials
+- Google OAuth Client ID
+- Google OAuth Client Secret
+
+Then BlankDrive opens browser for consent and finishes locally.
+
+### 6. Update or rotate credentials later
 
 ```bash
 BLANK auth --setup
 ```
 
-### Troubleshooting
+## OAuth Flow (How It Works)
 
-- `redirect_uri_mismatch`: Use **Desktop app** OAuth credentials (not Web application). BlankDrive uses loopback redirect like `http://127.0.0.1:<port>`.
-- `access blocked` or `app not verified`: Add your Google account under OAuth consent screen **Test users**.
-- Not getting a fresh token: run `BLANK auth --logout` then `BLANK auth`.
+1. BlankDrive starts a local callback server on `127.0.0.1` (random port).
+2. It builds a PKCE challenge and opens Google consent URL.
+3. Google redirects back to local loopback URL.
+4. BlankDrive exchanges code for tokens.
+5. Tokens and OAuth credentials are encrypted and stored locally under `~/.slasshy/`.
 
-## Cloud Storage Mode
+Reference:
 
-During first onboarding, BlankDrive asks where encrypted cloud data should be stored:
+- OAuth native apps: https://developers.google.com/identity/protocols/oauth2/native-app
 
-- `hidden` (recommended): Google Drive `appDataFolder` (not visible in Drive UI)
-- `public`: A visible path in Drive: `BlankDrive/<your-folder-name>/`
+## Cloud Storage Modes
 
-When `public` mode is selected, BlankDrive asks for the upload folder and stores encrypted files under `BlankDrive/<selected-folder>/`.
+You can use either:
 
-You can change it any time:
+- `public` (default): visible in Drive UI under `BlankDrive/<folder>/`
+- `hidden`: stored in Drive `appDataFolder` (not visible in Drive UI)
+
+Manage anytime:
 
 ```bash
 BLANK settings
-# or
-BLANK settings --storage hidden
 BLANK settings --storage public
+BLANK settings --storage hidden
 BLANK settings --folder my-device
 BLANK settings --storage public --folder my-device
 ```
 
-Note: switching mode does not migrate already uploaded cloud files automatically.
+Notes:
 
-## Security
+- In `public` mode, upload prompts for folder each upload (with saved folder as default).
+- Switching modes does not automatically migrate existing cloud files.
 
-| Component | Implementation |
-|-----------|----------------|
-| Encryption | AES-256-GCM (NIST approved) |
-| Key Derivation | Argon2id (64MB memory, 3 iterations) |
-| File Chunking | 20MB chunks with per-chunk encryption |
-| File Integrity | SHA-256 checksums |
-| Token Storage | Encrypted with machine-derived key |
-| Cloud Storage | Hidden appDataFolder or visible `BlankDrive/<folder>` |
-| Memory | Secure wiping after use |
+## Commands
 
-## Project Structure
-
-```
-blankdrive/
-├── src/
-│   ├── crypto/           # Encryption, KDF, key management
-│   ├── storage/
-│   │   ├── vault/        # Local encrypted vault
-│   │   └── drive/        # Google Drive integration
-│   │       ├── driveClient.ts      # Drive API wrapper
-│   │       └── fileSyncService.ts  # Chunked upload/download
-│   └── cli/
-│       ├── commands/     # CLI command handlers
-│       ├── shell.ts      # Interactive shell mode
-│       ├── progress.ts   # Progress bar utilities
-│       └── ensureAuth.ts # Auto-authentication helper
-├── .github/workflows/    # CI/CD automation
-└── dist/                 # Compiled JavaScript
-```
-
-## Development
+### CLI Commands
 
 ```bash
-# Install dependencies
-npm install
-
-# Run in development mode
-npm run dev
-
-# Build
-npm run build
-
-# Run tests
-npm test
-
-# Lint
-npm run lint
+BLANK init
+BLANK init --restore
+BLANK add
+BLANK get [search] [--copy] [--show-password]
+BLANK list [--filter <term>] [--type passwords|files|notes] [--category <name>]
+BLANK edit [search]
+BLANK favorite [search]
+BLANK favorites
+BLANK note [add|view|edit|list]
+BLANK audit [--all]
+BLANK upload [file]
+BLANK download [search]
+BLANK delete [search] [--force]
+BLANK settings [--storage hidden|public] [--folder <name>]
+BLANK auth [--setup|--logout]
+BLANK generate [options]
+BLANK status
+BLANK lock
+BLANK destruct
+BLANK version
 ```
 
-## Changelog
+### Interactive Shell (Extended Commands)
 
-### v0.0.1
-- **Auto Cloud Sync** - Files automatically sync to cloud on upload
-- **Hidden Storage** - Uses Google Drive's invisible appDataFolder
-- **Cloud Restore** - Restore vault on any device with `init --restore`
-- **Interactive Shell** - `BLANK shell` for multi-command sessions
-- **Destruct Command** - Permanently wipe vault (local + cloud)
-- **Progress Bars** - Real-time speed, ETA, and transfer progress
-- **Large File Support** - Chunked uploads with parallel processing
-- **Improved Error Handling** - Better error messages and recovery
-- Removed manual `sync` command (now automatic)
+Run with no args:
+
+```bash
+BLANK
+```
+
+Shell includes additional commands like:
+
+- `sync`
+- `totp` / `2fa`
+- `breach`
+- `duress`
+- `autolock`
+- `theme`
+- `history`
+- `auditlog`
+
+## Restore Flow
+
+```bash
+BLANK init --restore
+```
+
+Restore requires:
+
+- Same Google account
+- Correct vault master password
+- Correct storage mode/folder location of your backup
+
+## Security Model
+
+- Zero-knowledge: plaintext never leaves your machine
+- AES-256-GCM authenticated encryption
+- Argon2id key derivation
+- Per-entry encryption context (AAD)
+- Encrypted local storage for OAuth tokens/credentials
+- Optional hidden cloud storage (`appDataFolder`)
+
+## Troubleshooting
+
+### `redirect_uri_mismatch`
+
+- Ensure OAuth client type is `Desktop app`
+- Then run:
+
+```bash
+BLANK auth --setup
+```
+
+### Upload says success but file is not visible in Drive
+
+- You are likely in `hidden` mode (`appDataFolder`)
+- Switch to public mode:
+
+```bash
+BLANK settings --storage public
+```
+
+### Need to re-authenticate
+
+```bash
+BLANK auth --logout
+BLANK auth
+```
+
+### Access blocked / unverified app
+
+- Add your Google account as a test user in OAuth consent screen settings.
+
+## Local Data Paths
+
+- Vault and config: `~/.slasshy/`
+- Encrypted token file: `~/.slasshy/drive_token.enc`
+- Encrypted OAuth creds: `~/.slasshy/google_oauth_credentials.enc`
+- Cloud mode config: `~/.slasshy/cloud_storage_config.json`
 
 ## License
 
-MIT License - see [LICENSE](LICENSE)
-
-## Disclaimer
-
-This tool is for personal use. Always keep backups of your master password. **If you lose it, your data cannot be recovered.**
-
----
-
-Made with security in mind by [BlankDrive](https://github.com/SlasshyOverhere)
+MIT
