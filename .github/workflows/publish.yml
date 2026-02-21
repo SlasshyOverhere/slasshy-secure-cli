@@ -34,32 +34,68 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Check if GitHub release exists
+        id: check_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "v${{ steps.package.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check if npm version is published
+        id: check_npm
+        run: |
+          if npm view "blankdrive@${{ steps.package.outputs.version }}" version >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Evaluate release work
+        id: work
+        run: |
+          if [ "${{ steps.check_release.outputs.exists }}" = "false" ] || [ "${{ steps.check_npm.outputs.exists }}" = "false" ]; then
+            echo "required=true" >> $GITHUB_OUTPUT
+          else
+            echo "required=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Setup Node.js
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.work.outputs.required == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.work.outputs.required == 'true'
         run: npm ci
 
       - name: Build
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.work.outputs.required == 'true'
         run: npm run build
 
       - name: Run tests
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.work.outputs.required == 'true'
         run: npm run test -- --run
 
+      - name: Create and push tag
+        if: steps.check_tag.outputs.exists == 'false' && steps.check_release.outputs.exists == 'false'
+        run: |
+          git tag "v${{ steps.package.outputs.version }}"
+          git push origin "v${{ steps.package.outputs.version }}"
+
       - name: Generate release notes
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.check_release.outputs.exists == 'false'
         run: |
           set -euo pipefail
 
           VERSION="${{ steps.package.outputs.version }}"
-          PREV_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+          CURRENT_TAG="v$VERSION"
+          PREV_TAG="$(git tag --sort=-version:refname | grep -v "^${CURRENT_TAG}$" | head -n 1 || true)"
           if [ -n "$PREV_TAG" ]; then
             RANGE="$PREV_TAG..HEAD"
           else
@@ -120,7 +156,7 @@ jobs:
           fi
 
       - name: Create GitHub Release
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.check_release.outputs.exists == 'false'
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ steps.package.outputs.version }}
@@ -130,11 +166,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish to npm
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.check_npm.outputs.exists == 'false'
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Skip (version already released)
-        if: steps.check_tag.outputs.exists == 'true'
-        run: echo "Version v${{ steps.package.outputs.version }} already released. Skipping."
+      - name: Skip (already published and released)
+        if: steps.work.outputs.required == 'false'
+        run: echo "Version v${{ steps.package.outputs.version }} is already published on npm and has a GitHub release."
