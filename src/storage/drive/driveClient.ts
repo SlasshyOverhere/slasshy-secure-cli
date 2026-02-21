@@ -583,7 +583,8 @@ export async function listAppDataFiles(
   let pageToken: string | undefined = undefined;
 
   do {
-    const response = await drive.files.list({
+    // Explicit type to avoid "implicitly any" TS7022 error
+    const response: any = await drive.files.list({
       spaces: 'appDataFolder',
       q: query,
       fields: 'nextPageToken, files(id, name, size, createdTime, modifiedTime)',
