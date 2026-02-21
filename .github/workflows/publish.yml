@@ -1,10 +1,11 @@
-name: Auto Release & Publish
+name: Release & Publish
 
 on:
   push:
     branches: [main]
     paths:
       - 'package.json'
+      - 'package-lock.json'
   workflow_dispatch:
 
 permissions:
@@ -37,7 +38,7 @@ jobs:
         if: steps.check_tag.outputs.exists == 'false'
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
@@ -48,13 +49,83 @@ jobs:
         if: steps.check_tag.outputs.exists == 'false'
         run: npm run build
 
+      - name: Run tests
+        if: steps.check_tag.outputs.exists == 'false'
+        run: npm run test -- --run
+
+      - name: Generate release notes
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ steps.package.outputs.version }}"
+          PREV_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+          if [ -n "$PREV_TAG" ]; then
+            RANGE="$PREV_TAG..HEAD"
+          else
+            RANGE="HEAD"
+          fi
+
+          git log "$RANGE" --pretty=format:"%s" --no-merges > .release_commits.txt || true
+
+          {
+            echo "# BlankDrive v$VERSION"
+            echo
+            if [ -n "$PREV_TAG" ]; then
+              echo "_Changes since $PREV_TAG._"
+            else
+              echo "_Initial release notes._"
+            fi
+            echo
+            echo "## Patch Notes"
+          } > RELEASE_NOTES.md
+
+          PATCH_COUNT=0
+          while IFS= read -r subject; do
+            if [[ "$subject" =~ ^(fix|hotfix|perf|refactor|security|patch)(\(.+\))?:[[:space:]] ]]; then
+              echo "- $subject" >> RELEASE_NOTES.md
+              PATCH_COUNT=$((PATCH_COUNT + 1))
+            fi
+          done < .release_commits.txt
+
+          if [ "$PATCH_COUNT" -eq 0 ]; then
+            echo "- No patch-level fixes recorded in this release window." >> RELEASE_NOTES.md
+          fi
+
+          echo >> RELEASE_NOTES.md
+          echo "## Update Notes" >> RELEASE_NOTES.md
+
+          UPDATE_COUNT=0
+          while IFS= read -r subject; do
+            if [[ "$subject" =~ ^(feat|docs|chore|build|ci|test|style|release)(\(.+\))?:[[:space:]] ]]; then
+              echo "- $subject" >> RELEASE_NOTES.md
+              UPDATE_COUNT=$((UPDATE_COUNT + 1))
+            fi
+          done < .release_commits.txt
+
+          if [ "$UPDATE_COUNT" -eq 0 ]; then
+            while IFS= read -r subject; do
+              if [ -n "$subject" ]; then
+                echo "- $subject" >> RELEASE_NOTES.md
+                UPDATE_COUNT=$((UPDATE_COUNT + 1))
+                if [ "$UPDATE_COUNT" -ge 10 ]; then
+                  break
+                fi
+              fi
+            done < .release_commits.txt
+          fi
+
+          if [ "$UPDATE_COUNT" -eq 0 ]; then
+            echo "- No additional updates recorded in this release window." >> RELEASE_NOTES.md
+          fi
+
       - name: Create GitHub Release
         if: steps.check_tag.outputs.exists == 'false'
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ steps.package.outputs.version }}
           name: v${{ steps.package.outputs.version }}
-          generate_release_notes: true
+          body_path: RELEASE_NOTES.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

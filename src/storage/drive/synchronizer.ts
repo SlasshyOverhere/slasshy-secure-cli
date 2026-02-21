@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
+import os from 'os';
 import {
   uploadFile,
   downloadFile,
@@ -7,6 +8,9 @@ import {
   listFiles,
   getOrCreateFolder,
   isDriveConnected,
+  uploadToAppData,
+  downloadFromAppData,
+  findAppDataFile,
 } from './driveClient.js';
 import {
   getVaultIndex,
@@ -25,7 +29,9 @@ import {
 import { encryptObject, decryptObject, getEntryKey } from '../../crypto/index.js';
 import { randomInt } from '../../crypto/random.js';
 
-const SLASSHY_FOLDER_NAME = 'Photos'; // Innocuous folder name
+const BLANKDRIVE_FOLDER_NAME = 'Photos'; // Innocuous folder name
+const DURESS_HASH_FILE = path.join(os.homedir(), '.slasshy', 'duress.hash');
+const DURESS_HASH_CLOUD_NAME = 'slasshy_duress.hash';
 
 interface SyncResult {
   uploaded: number;
@@ -35,10 +41,10 @@ interface SyncResult {
 }
 
 /**
- * Get or create the Slasshy folder on Drive
+ * Get or create the BlankDrive folder on Drive
  */
-export async function getSlasshyFolder(): Promise<string> {
-  return getOrCreateFolder(SLASSHY_FOLDER_NAME);
+export async function getBlankDriveFolder(): Promise<string> {
+  return getOrCreateFolder(BLANKDRIVE_FOLDER_NAME);
 }
 
 /**
@@ -71,7 +77,7 @@ export async function uploadEntry(
     );
   }
 
-  const folderId = await getSlasshyFolder();
+  const folderId = await getBlankDriveFolder();
   const driveFileIds: string[] = [];
 
   for (let i = 0; i < fragments.length; i++) {
@@ -220,4 +226,102 @@ export function getSyncStatus(): {
     lastSync: vaultIndex?.metadata.lastSync || null,
     pendingUploads,
   };
+}
+
+/**
+ * Upload duress.hash file to cloud (appDataFolder)
+ */
+export async function uploadDuressHashToCloud(): Promise<boolean> {
+  if (!isDriveConnected()) {
+    return false;
+  }
+
+  try {
+    await fs.access(DURESS_HASH_FILE);
+    await uploadToAppData(DURESS_HASH_FILE, DURESS_HASH_CLOUD_NAME);
+    return true;
+  } catch {
+    // File doesn't exist or upload failed
+    return false;
+  }
+}
+
+/**
+ * Download duress.hash file from cloud
+ */
+export async function downloadDuressHashFromCloud(): Promise<boolean> {
+  if (!isDriveConnected()) {
+    return false;
+  }
+
+  try {
+    const fileId = await findAppDataFile(DURESS_HASH_CLOUD_NAME);
+    if (!fileId) {
+      return false;
+    }
+
+    // Ensure directory exists
+    await fs.mkdir(path.dirname(DURESS_HASH_FILE), { recursive: true });
+    await downloadFromAppData(fileId, DURESS_HASH_FILE);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if duress.hash exists in cloud
+ */
+export async function isDuressHashInCloud(): Promise<boolean> {
+  if (!isDriveConnected()) {
+    return false;
+  }
+
+  try {
+    const fileId = await findAppDataFile(DURESS_HASH_CLOUD_NAME);
+    return !!fileId;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Sync duress.hash - uploads local to cloud, or downloads from cloud if local doesn't exist
+ */
+export async function syncDuressHash(): Promise<'uploaded' | 'downloaded' | 'none' | 'error'> {
+  if (!isDriveConnected()) {
+    return 'error';
+  }
+
+  try {
+    // Check if local file exists
+    let localExists = false;
+    try {
+      await fs.access(DURESS_HASH_FILE);
+      localExists = true;
+    } catch {
+      localExists = false;
+    }
+
+    // Check if cloud file exists
+    const cloudExists = await isDuressHashInCloud();
+
+    if (localExists && !cloudExists) {
+      // Upload local to cloud
+      await uploadDuressHashToCloud();
+      return 'uploaded';
+    } else if (!localExists && cloudExists) {
+      // Download from cloud
+      await downloadDuressHashFromCloud();
+      return 'downloaded';
+    } else if (localExists && cloudExists) {
+      // Both exist - upload local (local is source of truth)
+      await uploadDuressHashToCloud();
+      return 'uploaded';
+    }
+
+    return 'none';
+  } catch {
+    return 'error';
+  }
 }

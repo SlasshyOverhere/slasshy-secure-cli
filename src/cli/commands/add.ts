@@ -8,13 +8,30 @@ import {
 } from '../../storage/vault/index.js';
 import { promptPassword, promptEntryDetails } from '../prompts.js';
 import { initializeKeyManager } from '../../crypto/index.js';
+import { logAuditEvent } from '../auditLog.js';
+import { isInDuressMode } from '../duress.js';
 
 export async function addCommand(): Promise<void> {
   console.log(chalk.bold('\n  Add New Entry\n'));
 
+  // Duress mode - pretend to add but don't save
+  if (isInDuressMode()) {
+    const details = await promptEntryDetails();
+
+    const spinner = ora('Encrypting and saving entry...').start();
+    // Simulate processing time
+    await new Promise(resolve => setTimeout(resolve, 800));
+    spinner.succeed('Entry added');
+
+    console.log(chalk.green(`\n  Entry "${details.title}" saved successfully!`));
+    console.log(chalk.gray(`  ID: decoy_${Date.now().toString(36)}`));
+    console.log(chalk.gray('\n  Note: Run "BLANK sync" to upload to Google Drive.\n'));
+    return;
+  }
+
   // Check vault exists
   if (!await vaultExists()) {
-    console.log(chalk.red('  No vault found. Run "slasshy init" first.'));
+    console.log(chalk.red('  No vault found. Run "BLANK init" first.'));
     return;
   }
 
@@ -53,9 +70,12 @@ export async function addCommand(): Promise<void> {
 
     spinner.succeed('Entry added');
 
+    // Log audit event
+    await logAuditEvent('entry_created', { entryId: entry.id, entryTitle: entry.title });
+
     console.log(chalk.green(`\n  Entry "${entry.title}" saved successfully!`));
     console.log(chalk.gray(`  ID: ${entry.id}`));
-    console.log(chalk.gray('\n  Note: Run "slasshy sync" to upload to Google Drive.\n'));
+    console.log(chalk.gray('\n  Note: Run "BLANK sync" to upload to Google Drive.\n'));
   } catch (error) {
     spinner.fail('Failed to add entry');
     if (error instanceof Error) {

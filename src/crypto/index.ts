@@ -3,3 +3,4 @@ export { deriveKey, deriveSubKey, deriveAllKeys, verifyPassword, hashKey } from 
 export { initializeKeyManager, unlockVault, createVault, lockVault, isVaultUnlocked, getIndexKey, getEntryKey, getMetadataKey, getCurrentSalt, getKeyHash } from './keyManager.js';
 export { wipeBuffer, wipeAllSecureBuffers, wipeString, createSecureBuffer, SecureKeyHolder, secureCompare, setupSecureCleanup } from './memoryGuard.js';
 export { randomBytes, generateSalt, generateIV, generateUUID, randomInt, randomHex, sha256, calculateChecksum, verifyChecksum } from './random.js';
+export { generatePassword, generatePassphrase, analyzePassword, calculateEntropy, PASSWORD_PRESETS, type PasswordOptions, type PasswordStrength, type StrengthResult } from './passwordGenerator.js';

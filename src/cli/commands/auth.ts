@@ -1,14 +1,17 @@
 import chalk from 'chalk';
 import ora from 'ora';
-import inquirer from 'inquirer';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import {
   performOAuthFlow,
   isAuthenticated,
-  setOAuthServerUrl,
-  getOAuthServerUrl,
-  isOAuthServerConfigured,
+  setGoogleOAuthCredentials,
+  getGoogleOAuthCredentials,
+  isGoogleOAuthConfigured,
+  getCloudStorageMode,
+  isCloudStorageModeConfigured,
+  getPublicContentFolderName,
+  isPublicContentFolderNameConfigured,
+  setPublicContentFolderName,
+  setCloudStorageMode,
   logout,
 } from '../../storage/drive/index.js';
 import {
@@ -18,89 +21,61 @@ import {
 } from '../../storage/vault/index.js';
 import { promptPassword, promptConfirm } from '../prompts.js';
 import { initializeKeyManager } from '../../crypto/index.js';
+import { maskGoogleClientId, promptGoogleOAuthCredentials } from '../googleOAuthSetup.js';
+import { promptCloudStorageMode, promptPublicContentFolderName } from '../cloudStorageSetup.js';
+import { openExternalUrl } from '../openExternal.js';
 
-const execAsync = promisify(exec);
+/**
+ * Detect OAuth client credential issues that require re-entering Client ID/Secret.
+ */
+function isGoogleCredentialError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const msg = error.message.toLowerCase();
+  return msg.includes('invalid_client')
+    || msg.includes('unauthorized_client')
+    || msg.includes('deleted_client')
+    || msg.includes('client secret')
+    || msg.includes('oauth credentials not configured');
+}
+
+/**
+ * Detect common redirect URI mismatch signal from OAuth flow timeout context.
+ */
+function isLikelyRedirectMismatch(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const msg = error.message.toLowerCase();
+  return msg.includes('timed out') || msg.includes('redirect_uri_mismatch');
+}
 
 /**
  * Open URL in default browser
  */
 async function openBrowser(url: string): Promise<void> {
-  const platform = process.platform;
-
-  let command: string;
-  if (platform === 'win32') {
-    command = `start "" "${url}"`;
-  } else if (platform === 'darwin') {
-    command = `open "${url}"`;
-  } else {
-    command = `xdg-open "${url}"`;
-  }
-
   try {
-    await execAsync(command);
+    await openExternalUrl(url);
   } catch {
     console.log(chalk.yellow(`\n  Please open this URL in your browser:`));
     console.log(chalk.cyan(`  ${url}\n`));
   }
 }
 
-/**
- * Validate backend URL format
- */
-function isValidUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Prompt for backend URL
- */
-async function promptBackendUrl(): Promise<string> {
-  console.log(chalk.yellow('\n  Backend OAuth Server Setup'));
-  console.log(chalk.gray('  ─────────────────────────────────────────────────'));
-  console.log(chalk.gray('  You need to provide your OAuth backend server URL.'));
-  console.log(chalk.gray('  This server handles Google OAuth authentication.'));
-  console.log(chalk.gray('  Example: https://your-oauth-server.onrender.com\n'));
-
-  const { backendUrl } = await inquirer.prompt<{ backendUrl: string }>([
-    {
-      type: 'input',
-      name: 'backendUrl',
-      message: 'Backend OAuth server URL:',
-      validate: (input: string) => {
-        const trimmed = input.trim();
-        if (!trimmed) {
-          return 'Backend URL is required';
-        }
-        if (!isValidUrl(trimmed)) {
-          return 'Please enter a valid URL (e.g., https://your-server.com)';
-        }
-        return true;
-      },
-    },
-  ]);
-
-  // Remove trailing slash if present
-  return backendUrl.trim().replace(/\/+$/, '');
-}
-
 export async function authCommand(options?: {
-  server?: string;
+  setup?: boolean;
   logout?: boolean;
 }): Promise<void> {
   console.log(chalk.bold('\n  Google Drive Authentication\n'));
 
-  // Handle logout
   if (options?.logout) {
     const spinner = ora('Logging out...').start();
     try {
       await logout();
       spinner.succeed('Logged out from Google Drive');
-      console.log(chalk.gray('\n  Your Drive tokens have been removed.\n'));
+      console.log(chalk.gray('\n  Your Google Drive tokens have been removed.\n'));
     } catch (error) {
       spinner.fail('Logout failed');
       if (error instanceof Error) {
@@ -112,8 +87,8 @@ export async function authCommand(options?: {
 
   // Check if vault exists (needed for token encryption)
   if (!await vaultExists()) {
-    console.log(chalk.red('  No vault found. Run "slasshy init" first.'));
-    console.log(chalk.gray('  The vault is needed to securely store your Drive tokens.\n'));
+    console.log(chalk.red('  No vault found. Run "BLANK init" first.'));
+    console.log(chalk.gray('  The vault is needed to securely store your Google Drive tokens.\n'));
     return;
   }
 
@@ -135,25 +110,46 @@ export async function authCommand(options?: {
     }
   }
 
-  // Check if backend URL is configured
-  let serverConfigured = await isOAuthServerConfigured();
+  await authenticateGoogleDrive(options?.setup === true);
+}
 
-  // Set custom server URL if provided via CLI option
-  if (options?.server) {
-    await setOAuthServerUrl(options.server);
-    serverConfigured = true;
-    console.log(chalk.gray(`  Using OAuth server: ${options.server}\n`));
+/**
+ * Authenticate with Google Drive
+ */
+async function authenticateGoogleDrive(forceSetup: boolean = false): Promise<void> {
+  if (!await isCloudStorageModeConfigured()) {
+    const selectedMode = await promptCloudStorageMode();
+    await setCloudStorageMode(selectedMode);
+    console.log(chalk.green(`\n  Cloud storage mode saved: ${selectedMode}\n`));
+
+    if (selectedMode === 'public') {
+      const folderName = await promptPublicContentFolderName();
+      await setPublicContentFolderName(folderName);
+      console.log(chalk.green(`  Public folder saved: BlankDrive/${folderName}\n`));
+    }
   }
 
-  // Prompt for backend URL if not configured
-  if (!serverConfigured) {
-    const backendUrl = await promptBackendUrl();
-    await setOAuthServerUrl(backendUrl);
-    console.log(chalk.green(`\n  Backend URL saved: ${backendUrl}`));
-    console.log(chalk.gray('  This will be used for all future authentication.\n'));
+  const cloudMode = await getCloudStorageMode();
+  if (cloudMode === 'public' && !await isPublicContentFolderNameConfigured()) {
+    const currentFolderName = await getPublicContentFolderName();
+    const folderName = await promptPublicContentFolderName(currentFolderName || undefined);
+    await setPublicContentFolderName(folderName);
+    console.log(chalk.green(`\n  Public folder saved: BlankDrive/${folderName}\n`));
+  }
+
+  const credentialsConfigured = await isGoogleOAuthConfigured();
+
+  if (!credentialsConfigured || forceSetup) {
+    const credentials = await promptGoogleOAuthCredentials();
+    await setGoogleOAuthCredentials(credentials.clientId, credentials.clientSecret);
+    console.log(chalk.green('\n  Google OAuth credentials saved.'));
+    console.log(chalk.gray('  Stored locally in encrypted form.\n'));
   } else {
-    const currentUrl = await getOAuthServerUrl();
-    console.log(chalk.gray(`  Using OAuth server: ${currentUrl}\n`));
+    const credentials = await getGoogleOAuthCredentials();
+    if (credentials) {
+      console.log(chalk.gray(`  Using Google OAuth Client ID: ${maskGoogleClientId(credentials.clientId)}`));
+      console.log(chalk.gray('  Use "BLANK auth --setup" to update credentials.\n'));
+    }
   }
 
   // Check if already authenticated
@@ -161,7 +157,7 @@ export async function authCommand(options?: {
     console.log(chalk.yellow('  Already authenticated with Google Drive.'));
     const reauth = await promptConfirm('Re-authenticate?');
     if (!reauth) {
-      console.log(chalk.gray('\n  Use "slasshy auth --logout" to disconnect.\n'));
+      console.log(chalk.gray('\n  Use "BLANK auth --logout" to disconnect.\n'));
       return;
     }
   }
@@ -177,9 +173,49 @@ export async function authCommand(options?: {
 
     console.log(chalk.green('\n  Successfully connected to Google Drive!'));
     console.log(chalk.gray('  Your tokens are encrypted and stored locally.'));
-    console.log(chalk.gray('\n  You can now use "slasshy sync" to upload your entries.\n'));
+    console.log(chalk.gray('\n  You can now use "BLANK sync" to upload your entries.\n'));
   } catch (error) {
     spinner.fail('Authentication failed');
+
+    if (isGoogleCredentialError(error)) {
+      console.log(chalk.yellow('\n  Your saved Google OAuth credentials are missing or invalid.'));
+      console.log(chalk.gray('  Please enter your Google Client ID and Client Secret again.\n'));
+
+      try {
+        const credentials = await promptGoogleOAuthCredentials();
+        await setGoogleOAuthCredentials(credentials.clientId, credentials.clientSecret);
+        console.log(chalk.green('\n  Google OAuth credentials updated.\n'));
+
+        const retrySpinner = ora('Retrying Google authorization...').start();
+        try {
+          await performOAuthFlow(openBrowser);
+          retrySpinner.succeed('Google Drive connected');
+          console.log(chalk.green('\n  Successfully connected to Google Drive!'));
+          console.log(chalk.gray('  Your tokens are encrypted and stored locally.'));
+          console.log(chalk.gray('\n  You can now use "BLANK sync" to upload your entries.\n'));
+          return;
+        } catch (retryError) {
+          retrySpinner.fail('Authentication failed');
+          if (retryError instanceof Error) {
+            console.log(chalk.red(`\n  ${retryError.message}\n`));
+          }
+          return;
+        }
+      } catch (setupError) {
+        if (setupError instanceof Error) {
+          console.log(chalk.red(`\n  ${setupError.message}\n`));
+        }
+        return;
+      }
+    }
+
+    if (isLikelyRedirectMismatch(error)) {
+      console.log(chalk.yellow('\n  OAuth callback did not complete.'));
+      console.log(chalk.gray('  Likely cause: redirect_uri_mismatch.'));
+      console.log(chalk.gray('  Fix: Create Google OAuth credentials as "Desktop app" (not "Web application").'));
+      console.log(chalk.gray('  Then run: BLANK auth --setup\n'));
+    }
+
     if (error instanceof Error) {
       console.log(chalk.red(`\n  ${error.message}\n`));
     }

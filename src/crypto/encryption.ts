@@ -129,8 +129,7 @@ export function decryptFromPayload(
   key: Buffer,
   aad?: string
 ): Buffer {
-  const combined = Buffer.from(payload, 'base64');
-  return decryptFromBuffer(combined, key, aad);
+  return decryptFromBuffer(Buffer.from(payload, 'base64'), key, aad);
 }
 
 /**

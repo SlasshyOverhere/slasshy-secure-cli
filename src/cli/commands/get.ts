@@ -1,24 +1,84 @@
 import chalk from 'chalk';
 import ora from 'ora';
 import clipboardy from 'clipboardy';
+import inquirer from 'inquirer';
 import {
   vaultExists,
   unlock,
   searchEntries,
   getEntry,
   isUnlocked,
+  listEntries,
   type Entry,
 } from '../../storage/vault/index.js';
 import { promptPassword, promptSelectEntry } from '../prompts.js';
 import { initializeKeyManager } from '../../crypto/index.js';
+import { checkPasswordExpiry } from './audit.js';
+import { logAuditEvent } from '../auditLog.js';
+import {
+  fuzzySearchEntries,
+  formatSearchResult,
+  getMatchQuality,
+  type SearchableEntry,
+  type FuzzySearchResult,
+} from '../fuzzySearch.js';
+import { isInDuressMode, getDecoyEntries } from '../duress.js';
 
 export async function getCommand(
   searchTerm?: string,
   options?: { copy?: boolean; showPassword?: boolean }
 ): Promise<void> {
+  // Duress mode - show decoy entries
+  if (isInDuressMode()) {
+    const decoyEntries = getDecoyEntries();
+    const query = searchTerm?.toLowerCase() || '';
+
+    const matches = query
+      ? decoyEntries.filter(e => e.title.toLowerCase().includes(query) || e.username.toLowerCase().includes(query))
+      : decoyEntries;
+
+    if (matches.length === 0) {
+      console.log(chalk.yellow(`\n  No entries found${query ? ` matching "${searchTerm}"` : ''}.\n`));
+      return;
+    }
+
+    const entry = matches[0]!;
+    console.log('');
+    console.log(chalk.bold.cyan(`  ${entry.title}`));
+    console.log(chalk.gray('  ' + '─'.repeat(40)));
+    console.log(`  ${chalk.gray('Username:')} ${entry.username}`);
+
+    // Generate a fake but realistic-looking password
+    const fakePassword = 'Tr0ub4dor&3';
+    if (options?.showPassword) {
+      console.log(`  ${chalk.gray('Password:')} ${fakePassword}`);
+    } else {
+      console.log(`  ${chalk.gray('Password:')} ${'*'.repeat(12)} ${chalk.gray('(use --show-password to reveal)')}`);
+    }
+
+    if (entry.url) {
+      console.log(`  ${chalk.gray('URL:')} ${entry.url}`);
+    }
+    console.log(chalk.gray('  ' + '─'.repeat(40)));
+    console.log(chalk.gray(`  Created: ${new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toLocaleString()}`));
+    console.log(chalk.gray(`  Modified: ${new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toLocaleString()}`));
+    console.log('');
+
+    if (options?.copy) {
+      try {
+        await clipboardy.write(fakePassword);
+        console.log(chalk.green('  Password copied to clipboard!'));
+        console.log(chalk.gray('  (Will be cleared in 30 seconds)\n'));
+      } catch {
+        console.log(chalk.yellow('  Could not copy to clipboard.\n'));
+      }
+    }
+    return;
+  }
+
   // Check vault exists
   if (!await vaultExists()) {
-    console.log(chalk.red('\n  No vault found. Run "slasshy init" first.\n'));
+    console.log(chalk.red('\n  No vault found. Run "BLANK init" first.\n'));
     return;
   }
 
@@ -40,13 +100,30 @@ export async function getCommand(
     }
   }
 
-  // Search for entries
+  // Search for entries using fuzzy search
   const query = searchTerm || '';
   const spinner = ora('Searching...').start();
 
-  let entries: Entry[];
+  let searchResults: FuzzySearchResult[];
+  let allEntries: SearchableEntry[];
   try {
-    entries = await searchEntries(query);
+    // Get all entries from vault
+    const rawEntries = await listEntries();
+
+    // Convert to searchable entries
+    allEntries = rawEntries.map(e => ({
+      id: e.id,
+      title: e.title,
+      username: undefined, // Will be populated later if needed
+      url: undefined,
+      category: e.category,
+      entryType: e.entryType,
+      modified: e.modified,
+      favorite: e.favorite,
+    }));
+
+    // Perform fuzzy search
+    searchResults = fuzzySearchEntries(allEntries, query);
     spinner.stop();
   } catch (error) {
     spinner.fail('Search failed');
@@ -56,28 +133,60 @@ export async function getCommand(
     return;
   }
 
-  if (entries.length === 0) {
+  if (searchResults.length === 0) {
     console.log(chalk.yellow(`\n  No entries found${query ? ` matching "${query}"` : ''}.\n`));
     return;
   }
 
   // Select entry if multiple matches
-  let entry: Entry;
-  if (entries.length === 1) {
-    entry = entries[0]!;
+  let entry: Entry | null = null;
+  if (searchResults.length === 1) {
+    entry = await getEntry(searchResults[0]!.item.id);
   } else {
-    console.log(chalk.gray(`\n  Found ${entries.length} entries:\n`));
-    const selectedId = await promptSelectEntry(
-      entries.map(e => ({ id: e.id, title: e.title, modified: e.modified }))
-    );
+    // Show fuzzy search results with match quality
+    console.log(chalk.bold(`\n  Found ${searchResults.length} entries:\n`));
+
+    // Take top 10 results
+    const topResults = searchResults.slice(0, 10);
+
+    const choices = topResults.map((result, idx) => ({
+      name: `${getMatchQuality(result.score)} ${formatSearchResult(result)}`,
+      value: result.item.id,
+    }));
+
+    if (searchResults.length > 10) {
+      console.log(chalk.gray(`  Showing top 10 of ${searchResults.length} matches\n`));
+    }
+
+    const { selectedId } = await inquirer.prompt<{ selectedId: string }>([
+      {
+        type: 'list',
+        name: 'selectedId',
+        message: chalk.cyan('Select entry:'),
+        choices,
+      },
+    ]);
+
     if (!selectedId) {
       return;
     }
-    entry = entries.find(e => e.id === selectedId)!;
+
+    entry = await getEntry(selectedId);
+  }
+
+  if (!entry) {
+    console.log(chalk.red('\n  Entry not found.\n'));
+    return;
   }
 
   // Display entry
   displayEntry(entry, options?.showPassword);
+
+  // Log audit events
+  await logAuditEvent('entry_accessed', { entryId: entry.id, entryTitle: entry.title });
+  if (options?.showPassword && entry.password) {
+    await logAuditEvent('password_viewed', { entryId: entry.id, entryTitle: entry.title });
+  }
 
   // Copy password if requested
   if (options?.copy && entry.password) {
@@ -85,6 +194,9 @@ export async function getCommand(
       await clipboardy.write(entry.password);
       console.log(chalk.green('  Password copied to clipboard!'));
       console.log(chalk.gray('  (Will be cleared in 30 seconds)\n'));
+
+      // Log password copy
+      await logAuditEvent('password_copied', { entryId: entry.id, entryTitle: entry.title });
 
       // Clear clipboard after 30 seconds
       setTimeout(async () => {
@@ -118,6 +230,12 @@ function displayEntry(entry: Entry, showPassword: boolean = false): void {
     } else {
       console.log(`  ${chalk.gray('Password:')} ${'*'.repeat(12)} ${chalk.gray('(use --show-password to reveal)')}`);
     }
+
+    // Check password expiry and show warning if needed
+    const expiryWarning = checkPasswordExpiry(entry);
+    if (expiryWarning) {
+      console.log(`  ${expiryWarning}`);
+    }
   }
 
   if (entry.url) {
@@ -134,5 +252,8 @@ function displayEntry(entry: Entry, showPassword: boolean = false): void {
   console.log(chalk.gray('  ' + '─'.repeat(40)));
   console.log(chalk.gray(`  Created: ${new Date(entry.created).toLocaleString()}`));
   console.log(chalk.gray(`  Modified: ${new Date(entry.modified).toLocaleString()}`));
+  if (entry.passwordLastChanged) {
+    console.log(chalk.gray(`  Password changed: ${new Date(entry.passwordLastChanged).toLocaleString()}`));
+  }
   console.log('');
 }

@@ -23,6 +23,8 @@ import {
   streamDownloadToFile,
   getParallelismInfo,
 } from '../../storage/drive/index.js';
+import { logAuditEvent } from '../auditLog.js';
+import { isInDuressMode } from '../duress.js';
 
 const execAsync = promisify(exec);
 
@@ -92,6 +94,13 @@ function formatFileSize(bytes: number): string {
 export async function downloadCommand(query?: string): Promise<void> {
   console.log(chalk.bold('\n  Download File from Vault\n'));
 
+  // Duress mode - show no files
+  if (isInDuressMode()) {
+    console.log(chalk.yellow('  No files found in vault.'));
+    console.log(chalk.gray('  Use "BLANK upload" to add files.\n'));
+    return;
+  }
+
   // Auto-authenticate with Google Drive (also handles vault unlock)
   if (!await ensureAuthenticated()) {
     return;
@@ -113,7 +122,7 @@ export async function downloadCommand(query?: string): Promise<void> {
 
   if (fileEntries.length === 0) {
     console.log(chalk.yellow('  No files found in vault.'));
-    console.log(chalk.gray('  Use "slasshy upload" to add files.\n'));
+    console.log(chalk.gray('  Use "BLANK upload" to add files.\n'));
     return;
   }
 
@@ -270,7 +279,7 @@ export async function downloadCommand(query?: string): Promise<void> {
   // Check cloud sync is available
   if (!await isCloudSyncAvailable()) {
     console.log(chalk.red('  Cloud sync not available.'));
-    console.log(chalk.gray('  Run "slasshy auth" to connect your Google account.\n'));
+    console.log(chalk.gray('  Run "BLANK auth" to connect your Google account.\n'));
     return;
   }
 
@@ -305,6 +314,9 @@ export async function downloadCommand(query?: string): Promise<void> {
     console.log('');
     console.log(chalk.green(`  Saved to: ${outputPath}`));
     console.log('');
+
+    // Log audit event
+    await logAuditEvent('file_downloaded', { entryId: selectedId, entryTitle: fileEntry.title });
   } catch (error) {
     progressTracker.bar.stop();
     console.log('');

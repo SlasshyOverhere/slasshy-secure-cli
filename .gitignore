@@ -1,7 +1,11 @@
 node_modules/
 dist/
 .env
+.env.*
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 .DS_Store
 Thumbs.db
 
@@ -10,6 +14,9 @@ Thumbs.db
 *.enc
 credentials.json
 token.json
+.slasshy-credentials.json
+.npmrc
+*.tgz
 
 # IDE
 .vscode/
@@ -17,3 +24,6 @@ token.json
 
 # Test coverage
 coverage/
+
+# Agent reports (internal development notes - never commit!)
+agent-report/

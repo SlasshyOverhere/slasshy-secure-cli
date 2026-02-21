@@ -9,12 +9,19 @@ import {
   getCommand,
   listCommand,
   deleteCommand,
+  editCommand,
+  favoriteCommand,
+  listFavoritesCommand,
+  noteCommand,
+  auditCommand,
   statusCommand,
   lockCommand,
   authCommand,
   uploadCommand,
   downloadCommand,
   destructCommand,
+  generateCommand,
+  settingsCommand,
 } from './cli/commands/index.js';
 import { startShell } from './cli/shell.js';
 
@@ -27,16 +34,22 @@ const program = new Command();
 
 // ASCII art banner
 const banner = `
-  ███████╗██╗      █████╗ ███████╗███████╗██╗  ██╗██╗   ██╗
-  ██╔════╝██║     ██╔══██╗██╔════╝██╔════╝██║  ██║╚██╗ ██╔╝
-  ███████╗██║     ███████║███████╗███████╗███████║ ╚████╔╝
-  ╚════██║██║     ██╔══██║╚════██║╚════██║██╔══██║  ╚██╔╝
-  ███████║███████╗██║  ██║███████║███████║██║  ██║   ██║
-  ╚══════╝╚══════╝╚═╝  ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝   ╚═╝
+  ██████╗ ██╗      █████╗ ███╗   ██╗██╗  ██╗
+  ██╔══██╗██║     ██╔══██╗████╗  ██║██║ ██╔╝
+  ██████╔╝██║     ███████║██╔██╗ ██║█████╔╝
+  ██╔══██╗██║     ██╔══██║██║╚██╗██║██╔═██╗
+  ██████╔╝███████╗██║  ██║██║ ╚████║██║  ██╗
+  ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝
+     ██████╗ ██████╗ ██╗██╗   ██╗███████╗
+     ██╔══██╗██╔══██╗██║██║   ██║██╔════╝
+     ██║  ██║██████╔╝██║██║   ██║█████╗
+     ██║  ██║██╔══██╗██║╚██╗ ██╔╝██╔══╝
+     ██████╔╝██║  ██║██║ ╚████╔╝ ███████╗
+     ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝  ╚══════╝
 `;
 
 program
-  .name('slasshy')
+  .name('BLANK')
   .description('Military-grade secure storage with steganography & Google Drive sync')
   .version(VERSION, '-v, --version', 'Show version number')
   .addHelpText('before', chalk.cyan(banner));
@@ -75,7 +88,8 @@ program
   .alias('ls')
   .description('List all entries in the vault')
   .option('-f, --filter <term>', 'Filter entries by title')
-  .option('-t, --type <type>', 'Filter by type: passwords or files')
+  .option('-t, --type <type>', 'Filter by type: passwords, files, or notes')
+  .option('-c, --category <name>', 'Filter by category')
   .action(async (options) => {
     await listCommand(options);
   });
@@ -108,12 +122,65 @@ program
     await deleteCommand(search, options);
   });
 
+// Edit command
+program
+  .command('edit [search]')
+  .description('Edit an existing entry in the vault')
+  .action(async (search) => {
+    await editCommand(search);
+  });
+
+// Favorite command
+program
+  .command('favorite [search]')
+  .alias('fav')
+  .description('Toggle favorite status of an entry')
+  .action(async (search) => {
+    await favoriteCommand(search);
+  });
+
+// Favorites list command
+program
+  .command('favorites')
+  .alias('favs')
+  .description('List all favorite entries')
+  .action(async () => {
+    await listFavoritesCommand();
+  });
+
+// Note command
+program
+  .command('note [subcommand] [arg]')
+  .description('Manage secure notes (add, view, edit, list)')
+  .action(async (subcommand, arg) => {
+    await noteCommand(subcommand, arg);
+  });
+
+// Audit command
+program
+  .command('audit')
+  .description('Check password security and expiry status')
+  .option('-a, --all', 'Show all passwords including up-to-date ones')
+  .action(async (options) => {
+    await auditCommand(options);
+  });
+
 // Status command
 program
   .command('status')
   .description('Show vault and sync status')
   .action(async () => {
     await statusCommand();
+  });
+
+// Settings command
+program
+  .command('settings')
+  .description('Manage app settings')
+  .option('--storage <mode>', 'Cloud storage mode: hidden or public')
+  .option('--folder <name>', 'Public folder name under BlankDrive')
+  .action(async (options) => {
+    await settingsCommand(options);
   });
 
 // Lock command
@@ -127,8 +194,8 @@ program
 // Auth command
 program
   .command('auth')
-  .description('Authenticate with Google Drive via OAuth')
-  .option('-s, --server <url>', 'Custom OAuth server URL')
+  .description('Authenticate with Google Drive via OAuth (your own client credentials)')
+  .option('--setup', 'Set or update Google OAuth Client ID/Secret')
   .option('-l, --logout', 'Disconnect from Google Drive')
   .action(async (options) => {
     await authCommand(options);
@@ -142,12 +209,34 @@ program
     await destructCommand();
   });
 
+// Generate command
+program
+  .command('generate')
+  .alias('gen')
+  .description('Generate a secure password or passphrase')
+  .option('-l, --length <number>', 'Password length (default: 20)')
+  .option('-p, --preset <name>', 'Use preset: strong, standard, alphanumeric, memorable, pin')
+  .option('--passphrase', 'Generate a memorable passphrase')
+  .option('-w, --words <number>', 'Number of words for passphrase (default: 5)')
+  .option('-c, --copy', 'Copy to clipboard')
+  .option('--no-symbols', 'Exclude symbols')
+  .action(async (options) => {
+    await generateCommand({
+      length: options.length ? parseInt(options.length, 10) : undefined,
+      preset: options.preset,
+      passphrase: options.passphrase,
+      words: options.words ? parseInt(options.words, 10) : undefined,
+      copy: options.copy,
+      noSymbols: !options.symbols,
+    });
+  });
+
 // Version command (explicit)
 program
   .command('version')
   .description('Show version number')
   .action(() => {
-    console.log(chalk.cyan(`\n  Slasshy v${VERSION}\n`));
+    console.log(chalk.cyan(`\n  BlankDrive v${VERSION}\n`));
   });
 
 // Check for interactive shell mode (no arguments)

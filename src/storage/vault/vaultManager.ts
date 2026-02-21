@@ -6,7 +6,9 @@ import crypto from 'crypto';
 import {
   encryptObject,
   decryptObject,
+  encryptToBuffer,
   encryptToPayload,
+  decryptFromBuffer,
   decryptToString,
   decryptFromPayload,
   createVault,
@@ -17,8 +19,6 @@ import {
   getEntryKey,
   initializeKeyManager,
   generateUUID,
-  encryptToBuffer,
-  decryptFromBuffer,
 } from '../../crypto/index.js';
 import {
   createEmptyIndex,
@@ -26,11 +26,15 @@ import {
   createFileEntry,
   validateEntry,
   validateFileEntry,
+  validateNoteEntry,
+  createNoteEntry,
   validateVaultIndex,
   type Entry,
   type FileEntry,
+  type NoteEntry,
   type VaultIndex,
   type IndexEntry,
+  type Vault2FAConfig,
 } from './schema.js';
 
 const VAULT_DIR = path.join(os.homedir(), '.slasshy');
@@ -207,6 +211,7 @@ export async function addEntry(
     password?: string;
     url?: string;
     notes?: string;
+    category?: string;
   }
 ): Promise<Entry> {
   if (!isUnlocked() || !vaultIndex) {
@@ -230,6 +235,8 @@ export async function addEntry(
     fragments: [], // Will be populated when syncing to Drive
     carrierType: 'png',
     localPath: undefined,
+    category: data.category, // Include category in index
+    favorite: false,
     created: entry.created,
     modified: entry.modified,
   };
@@ -324,12 +331,12 @@ export async function searchEntries(query: string): Promise<Entry[]> {
 /**
  * List all entries (titles only for performance)
  */
-export async function listEntries(): Promise<Array<{ id: string; title: string; modified: number }>> {
+export async function listEntries(): Promise<Array<{ id: string; title: string; modified: number; favorite: boolean; entryType: string; category?: string }>> {
   if (!isUnlocked() || !vaultIndex) {
     throw new Error('Vault is locked');
   }
 
-  const results: Array<{ id: string; title: string; modified: number }> = [];
+  const results: Array<{ id: string; title: string; modified: number; favorite: boolean; entryType: string; category?: string }> = [];
   const indexKey = getIndexKey();
 
   for (const [id, indexEntry] of Object.entries(vaultIndex.entries)) {
@@ -339,13 +346,21 @@ export async function listEntries(): Promise<Array<{ id: string; title: string; 
         id,
         title,
         modified: indexEntry.modified,
+        favorite: indexEntry.favorite || false,
+        entryType: indexEntry.entryType || 'password',
+        category: indexEntry.category,
       });
     } catch {
       // Skip entries that fail to decrypt
     }
   }
 
-  return results.sort((a, b) => b.modified - a.modified);
+  // Sort: favorites first, then by modified date
+  return results.sort((a, b) => {
+    if (a.favorite && !b.favorite) return -1;
+    if (!a.favorite && b.favorite) return 1;
+    return b.modified - a.modified;
+  });
 }
 
 /**
@@ -382,11 +397,49 @@ export async function updateEntry(
   if (updates.title) {
     vaultIndex.entries[id]!.titleEncrypted = encryptToPayload(updates.title, indexKey);
   }
+  // Update index favorite status
+  if (updates.favorite !== undefined) {
+    vaultIndex.entries[id]!.favorite = updates.favorite;
+  }
+  // Update index category
+  if (updates.category !== undefined) {
+    vaultIndex.entries[id]!.category = updates.category || undefined;
+  }
   vaultIndex.entries[id]!.modified = updated.modified;
 
   await saveIndexWithHeader();
 
   return updated;
+}
+
+/**
+ * Toggle favorite status of an entry
+ */
+export async function toggleFavorite(id: string): Promise<{ favorite: boolean } | null> {
+  if (!isUnlocked() || !vaultIndex) {
+    throw new Error('Vault is locked');
+  }
+
+  const indexEntry = vaultIndex.entries[id];
+  if (!indexEntry) {
+    return null;
+  }
+
+  // Toggle the favorite status
+  const newFavoriteStatus = !indexEntry.favorite;
+
+  // Update the full entry if it exists
+  const entry = await getEntry(id);
+  if (entry) {
+    await updateEntry(id, { favorite: newFavoriteStatus });
+  } else {
+    // For file entries or if entry doesn't exist, just update the index
+    indexEntry.favorite = newFavoriteStatus;
+    indexEntry.modified = Date.now();
+    await saveIndexWithHeader();
+  }
+
+  return { favorite: newFavoriteStatus };
 }
 
 /**
@@ -449,6 +502,48 @@ export async function updateVaultIndex(updates: Partial<VaultIndex['metadata']>)
   }
 
   vaultIndex.metadata = { ...vaultIndex.metadata, ...updates };
+  await saveIndexWithHeader();
+}
+
+/**
+ * Get vault 2FA configuration
+ */
+export function getVault2FAConfig(): Vault2FAConfig | undefined {
+  if (!vaultIndex) {
+    return undefined;
+  }
+  return vaultIndex.vault2fa;
+}
+
+/**
+ * Check if vault 2FA is enabled
+ */
+export function isVault2FAEnabled(): boolean {
+  return vaultIndex?.vault2fa?.enabled === true;
+}
+
+/**
+ * Set vault 2FA configuration
+ */
+export async function setVault2FAConfig(config: Vault2FAConfig | undefined): Promise<void> {
+  if (!vaultIndex) {
+    throw new Error('No vault loaded');
+  }
+
+  vaultIndex.vault2fa = config;
+  await saveIndexWithHeader();
+}
+
+/**
+ * Use a backup code (removes it from the list after use)
+ */
+export async function useBackupCode(codeIndex: number): Promise<void> {
+  if (!vaultIndex?.vault2fa?.backupCodes) {
+    throw new Error('No backup codes available');
+  }
+
+  // Remove the used backup code
+  vaultIndex.vault2fa.backupCodes.splice(codeIndex, 1);
   await saveIndexWithHeader();
 }
 
@@ -600,7 +695,7 @@ export async function addFileEntry(
         // Encrypt this chunk
         const encryptedChunk = encryptToBuffer(chunkBuffer, entryKey, `${entry.id}_chunk_${i}`);
 
-        // Write chunk to temp folder (binary write, no encoding)
+        // Write chunk to temp folder as binary
         const chunkPath = path.join(TEMP_FILES_DIR, `${entry.id}_${i}.bin`);
         await fs.writeFile(chunkPath, encryptedChunk);
 
@@ -638,6 +733,7 @@ export async function addFileEntry(
     fileSize: fileSize,
     mimeType,
     chunkCount: needsChunking ? chunkCount : undefined,
+    favorite: false,
     created: entry.created,
     modified: entry.modified,
   };
@@ -678,6 +774,122 @@ export async function getFileEntry(id: string): Promise<FileEntry | null> {
 }
 
 /**
+ * Add a new note entry to the vault
+ */
+export async function addNoteEntry(
+  title: string,
+  content: string,
+  favorite?: boolean
+): Promise<NoteEntry> {
+  if (!isUnlocked() || !vaultIndex) {
+    throw new Error('Vault is locked');
+  }
+
+  const entry = createNoteEntry(title, content, favorite);
+  const entryKey = getEntryKey();
+  const indexKey = getIndexKey();
+
+  // Encrypt the note entry
+  const encryptedEntry = encryptObject(entry, entryKey, entry.id);
+
+  // Store encrypted entry
+  const entryPath = path.join(VAULT_DIR, 'entries', `${entry.id}.enc`);
+  await fs.mkdir(path.join(VAULT_DIR, 'entries'), { recursive: true });
+  await fs.writeFile(entryPath, encryptedEntry, 'utf-8');
+
+  // Create index entry
+  const indexEntry: IndexEntry = {
+    titleEncrypted: encryptToPayload(title, indexKey),
+    entryType: 'note',
+    fragments: [],
+    carrierType: 'png',
+    localPath: undefined,
+    favorite: favorite || false,
+    created: entry.created,
+    modified: entry.modified,
+  };
+
+  // Update index
+  vaultIndex.entries[entry.id] = indexEntry;
+  vaultIndex.metadata.entryCount++;
+  vaultIndex.metadata.lastSync = null;
+
+  await saveIndexWithHeader();
+
+  return entry;
+}
+
+/**
+ * Get a note entry by ID
+ */
+export async function getNoteEntry(id: string): Promise<NoteEntry | null> {
+  if (!isUnlocked() || !vaultIndex) {
+    throw new Error('Vault is locked');
+  }
+
+  const indexEntry = vaultIndex.entries[id];
+  if (!indexEntry || indexEntry.entryType !== 'note') {
+    return null;
+  }
+
+  const entryPath = path.join(VAULT_DIR, 'entries', `${id}.enc`);
+
+  try {
+    const encryptedEntry = await fs.readFile(entryPath, 'utf-8');
+    const entryKey = getEntryKey();
+    const entry = decryptObject<NoteEntry>(encryptedEntry, entryKey, id);
+    return validateNoteEntry(entry);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Update a note entry
+ */
+export async function updateNoteEntry(
+  id: string,
+  updates: Partial<Omit<NoteEntry, 'id' | 'type' | 'created'>>
+): Promise<NoteEntry | null> {
+  if (!isUnlocked() || !vaultIndex) {
+    throw new Error('Vault is locked');
+  }
+
+  const existing = await getNoteEntry(id);
+  if (!existing) {
+    return null;
+  }
+
+  const updated: NoteEntry = {
+    ...existing,
+    ...updates,
+    modified: Date.now(),
+  };
+
+  const entryKey = getEntryKey();
+  const indexKey = getIndexKey();
+
+  // Re-encrypt entry
+  const encryptedEntry = encryptObject(updated, entryKey, id);
+  const entryPath = path.join(VAULT_DIR, 'entries', `${id}.enc`);
+  await fs.writeFile(entryPath, encryptedEntry, 'utf-8');
+
+  // Update index if title changed
+  if (updates.title) {
+    vaultIndex.entries[id]!.titleEncrypted = encryptToPayload(updates.title, indexKey);
+  }
+  // Update index favorite status
+  if (updates.favorite !== undefined) {
+    vaultIndex.entries[id]!.favorite = updates.favorite;
+  }
+  vaultIndex.entries[id]!.modified = updated.modified;
+
+  await saveIndexWithHeader();
+
+  return updated;
+}
+
+/**
  * Get the decrypted file data by entry ID (supports chunked files)
  */
 export async function getFileData(
@@ -713,17 +925,14 @@ export async function getFileData(
         throw new Error(`Missing chunk file ${i + 1}/${indexEntry.chunkCount}. File may be corrupted.`);
       }
 
-      // Read as buffer (no encoding)
       const encryptedChunk = await fs.readFile(chunkPath);
       let decryptedChunk: Buffer;
-
       try {
         decryptedChunk = decryptFromBuffer(encryptedChunk, entryKey, `${id}_chunk_${i}`);
-      } catch (error) {
-        // Fallback for legacy Base64 files
+      } catch {
+        // Backward compatibility for legacy base64 chunk payloads.
         decryptedChunk = decryptFromPayload(encryptedChunk.toString('utf-8'), entryKey, `${id}_chunk_${i}`);
       }
-
       chunks.push(decryptedChunk);
 
       bytesProcessed += decryptedChunk.length;
@@ -744,14 +953,12 @@ export async function getFileData(
       throw new Error('Encrypted file data not found. File may have been deleted.');
     }
 
-    // Read as buffer (no encoding)
     const encryptedData = await fs.readFile(fileDataPath);
     let result: Buffer;
-
     try {
       result = decryptFromBuffer(encryptedData, entryKey, id);
-    } catch (error) {
-      // Fallback for legacy Base64 files
+    } catch {
+      // Backward compatibility for legacy base64 payloads.
       result = decryptFromPayload(encryptedData.toString('utf-8'), entryKey, id);
     }
 

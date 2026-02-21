@@ -1,6 +1,6 @@
 /**
  * File Sync Service - Handles uploading/downloading encrypted file chunks to/from
- * Google Drive's hidden appDataFolder (invisible to users in Drive UI)
+ * Google Drive using the configured cloud mode (hidden appDataFolder or public BlankDrive folder)
  */
 
 import fs from 'fs/promises';
@@ -10,12 +10,11 @@ import {
   uploadToAppData,
   downloadFromAppData,
   downloadAppDataToBuffer,
-  findAppDataFile,
   deleteFromAppData,
   listAppDataFiles,
   hasAppDataAccess,
 } from './driveClient.js';
-import { decryptFromPayload, decryptFromBuffer } from '../../crypto/index.js';
+import { decryptFromBuffer, decryptFromPayload } from '../../crypto/index.js';
 import fsSync from 'fs';
 
 // Use temp folder for encrypted chunks
@@ -44,7 +43,7 @@ export interface CloudFileInfo {
 async function runParallel<T>(
   tasks: (() => Promise<T>)[],
   limit: number,
-  onTaskComplete?: (completed: number, total: number) => void
+  onTaskComplete?: (completed: number, total: number, result: T) => void
 ): Promise<T[]> {
   const results: T[] = [];
   let completed = 0;
@@ -61,7 +60,7 @@ async function runParallel<T>(
     completed++;
 
     if (onTaskComplete) {
-      onTaskComplete(completed, tasks.length);
+      onTaskComplete(completed, tasks.length, result);
     }
 
     await runNext();
@@ -77,7 +76,7 @@ async function runParallel<T>(
 }
 
 /**
- * Upload all encrypted chunks for a file entry to the hidden appDataFolder
+ * Upload all encrypted chunks for a file entry to the configured cloud storage mode
  * Uses parallel uploads for speed
  */
 export async function uploadFileToCloud(
@@ -106,8 +105,15 @@ export async function uploadFileToCloud(
     }
   }
 
-  let completedChunks = 0;
   let bytesUploaded = 0;
+  const existingFiles = await listAppDataFiles(`slasshy_${entryId}_chunk_`);
+  const existingByName = new Map<string, string>();
+  for (const file of existingFiles) {
+    if (!file.name || !file.id) {
+      continue;
+    }
+    existingByName.set(file.name, file.id);
+  }
 
   // Create upload tasks
   const uploadTasks = Array.from({ length: chunkCount }, (_, i) => {
@@ -122,9 +128,8 @@ export async function uploadFileToCloud(
       const cloudFileName = `slasshy_${entryId}_chunk_${i}.bin`;
 
       // Check if already uploaded (idempotency)
-      const existingId = await findAppDataFile(cloudFileName);
+      const existingId = existingByName.get(cloudFileName);
       if (existingId) {
-        bytesUploaded += chunkSizes[i] || 0;
         return {
           chunkIndex: i,
           driveFileId: existingId,
@@ -135,8 +140,6 @@ export async function uploadFileToCloud(
       // Upload the chunk
       const driveFileId = await uploadToAppData(chunkPath, cloudFileName);
 
-      bytesUploaded += chunkSizes[i] || 0;
-
       return {
         chunkIndex: i,
         driveFileId,
@@ -146,8 +149,8 @@ export async function uploadFileToCloud(
   });
 
   // Run uploads in parallel
-  const chunks = await runParallel(uploadTasks, PARALLEL_LIMIT, (completed, total) => {
-    completedChunks = completed;
+  const chunks = await runParallel(uploadTasks, PARALLEL_LIMIT, (completed, total, result) => {
+    bytesUploaded += result.size;
     if (onProgress) {
       onProgress(completed, total, bytesUploaded, totalBytes);
     }
@@ -171,8 +174,8 @@ export async function downloadFileFromCloud(
   let bytesDownloaded = 0;
 
   // Create download tasks
-  const downloadTasks = cloudChunks.map((chunk, i) => {
-    return async (): Promise<void> => {
+  const downloadTasks = cloudChunks.map((chunk) => {
+    return async (): Promise<number> => {
       let localPath: string;
       if (cloudChunks.length === 1) {
         localPath = path.join(TEMP_FILES_DIR, `${entryId}.bin`);
@@ -184,19 +187,19 @@ export async function downloadFileFromCloud(
       try {
         await fs.access(localPath);
         // File exists, skip download
-        bytesDownloaded += chunk.size;
-        return;
+        return chunk.size;
       } catch {
         // File doesn't exist, download it
       }
 
       await downloadFromAppData(chunk.driveFileId, localPath);
-      bytesDownloaded += chunk.size;
+      return chunk.size;
     };
   });
 
   // Run downloads in parallel
-  await runParallel(downloadTasks, PARALLEL_LIMIT, (completed, total) => {
+  await runParallel(downloadTasks, PARALLEL_LIMIT, (completed, total, processedBytes) => {
+    bytesDownloaded += processedBytes;
     if (onProgress) {
       onProgress(completed, total, bytesDownloaded, totalBytes);
     }
@@ -237,10 +240,12 @@ export async function deleteFileFromCloud(
  * Check if a file entry has all chunks uploaded to cloud
  */
 export async function isFileInCloud(entryId: string, chunkCount: number): Promise<boolean> {
+  const files = await listAppDataFiles(`slasshy_${entryId}_chunk_`);
+  const availableNames = new Set(files.map((file) => file.name).filter((name): name is string => !!name));
+
   for (let i = 0; i < chunkCount; i++) {
     const cloudFileName = `slasshy_${entryId}_chunk_${i}.bin`;
-    const existingId = await findAppDataFile(cloudFileName);
-    if (!existingId) {
+    if (!availableNames.has(cloudFileName)) {
       return false;
     }
   }
@@ -321,17 +326,16 @@ export async function streamDownloadToFile(
 
     for (const chunk of sortedChunks) {
       // Download chunk to memory
-      const encryptedData = await downloadAppDataToBuffer(chunk.driveFileId);
+      const encryptedPayload = await downloadAppDataToBuffer(chunk.driveFileId);
 
       // Decrypt chunk
       const aad = chunkCount === 1 ? entryId : `${entryId}_chunk_${chunk.chunkIndex}`;
-
       let decryptedData: Buffer;
       try {
-        decryptedData = decryptFromBuffer(encryptedData, entryKey, aad);
-      } catch (error) {
-        // Fallback for legacy Base64 files
-        decryptedData = decryptFromPayload(encryptedData.toString('utf-8'), entryKey, aad);
+        decryptedData = decryptFromBuffer(encryptedPayload, entryKey, aad);
+      } catch {
+        // Backward compatibility for legacy base64 payloads.
+        decryptedData = decryptFromPayload(encryptedPayload.toString('utf-8'), entryKey, aad);
       }
 
       // Write to file
@@ -386,17 +390,16 @@ export async function streamDownloadToFile(
       const downloadTasks = sortedChunks.map((chunk) => {
         return async (): Promise<void> => {
           // Download chunk to memory
-          const encryptedData = await downloadAppDataToBuffer(chunk.driveFileId);
+          const encryptedPayload = await downloadAppDataToBuffer(chunk.driveFileId);
 
           // Decrypt chunk
           const aad = chunkCount === 1 ? entryId : `${entryId}_chunk_${chunk.chunkIndex}`;
-
           let decryptedData: Buffer;
           try {
-            decryptedData = decryptFromBuffer(encryptedData, entryKey, aad);
-          } catch (error) {
-            // Fallback for legacy Base64 files
-            decryptedData = decryptFromPayload(encryptedData.toString('utf-8'), entryKey, aad);
+            decryptedData = decryptFromBuffer(encryptedPayload, entryKey, aad);
+          } catch {
+            // Backward compatibility for legacy base64 payloads.
+            decryptedData = decryptFromPayload(encryptedPayload.toString('utf-8'), entryKey, aad);
           }
 
           // Store in map for ordered writing

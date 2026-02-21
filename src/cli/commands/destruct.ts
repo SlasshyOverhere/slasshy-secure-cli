@@ -112,7 +112,7 @@ export async function destructCommand(): Promise<void> {
     console.log(chalk.red('  ════════════════════════════════════════'));
     console.log('');
     console.log(chalk.gray('  All data has been permanently deleted.'));
-    console.log(chalk.gray('  To create a new vault, run: slasshy init\n'));
+    console.log(chalk.gray('  To create a new vault, run: BLANK init\n'));
 
   } catch (error) {
     spinner.fail('Self-destruct failed');

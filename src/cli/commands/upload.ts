@@ -6,22 +6,24 @@ import inquirer from 'inquirer';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import {
-  vaultExists,
-  unlock,
-  isUnlocked,
   addFileEntry,
   getVaultIndex,
   updateVaultIndex,
   cleanupTempFiles,
 } from '../../storage/vault/index.js';
-import { initializeKeyManager } from '../../crypto/index.js';
-import { promptPassword } from '../prompts.js';
 import { createProgressTracker } from '../progress.js';
 import { ensureAuthenticated } from '../ensureAuth.js';
 import {
   uploadFileToCloud,
-  isCloudSyncAvailable,
+  getCloudStorageMode,
+  setCloudStorageMode,
+  getPublicContentFolderName,
+  isPublicContentFolderNameConfigured,
+  setPublicContentFolderName,
 } from '../../storage/drive/index.js';
+import { logAuditEvent } from '../auditLog.js';
+import { isInDuressMode } from '../duress.js';
+import { promptPublicContentFolderName } from '../cloudStorageSetup.js';
 
 const execAsync = promisify(exec);
 
@@ -106,13 +108,129 @@ function cleanFilePath(input: string): string {
   return cleaned;
 }
 
+async function ensureUploadStorageTarget(): Promise<{ mode: 'hidden' | 'public'; folderName: string | null }> {
+  let mode = await getCloudStorageMode();
+
+  if (mode === 'hidden') {
+    console.log(chalk.yellow('  Current cloud storage mode is hidden (appDataFolder).'));
+    console.log(chalk.gray('  Files uploaded in hidden mode are encrypted but not visible in Google Drive UI.\n'));
+
+    const { switchToPublic } = await inquirer.prompt<{ switchToPublic: boolean }>([
+      {
+        type: 'confirm',
+        name: 'switchToPublic',
+        message: 'Switch to visible mode for future uploads (BlankDrive/<folder>)?',
+        default: true,
+      },
+    ]);
+
+    if (switchToPublic) {
+      await setCloudStorageMode('public');
+      mode = 'public';
+      console.log(chalk.green('  Cloud storage mode updated: public'));
+    } else {
+      console.log(chalk.gray('  Keeping hidden mode for this upload.'));
+    }
+  }
+
+  let folderName = await getPublicContentFolderName();
+  if (mode === 'public') {
+    const hasSavedFolder = await isPublicContentFolderNameConfigured();
+    const nextFolderName = await promptPublicContentFolderName(
+      hasSavedFolder ? (folderName || undefined) : undefined
+    );
+    folderName = nextFolderName;
+    await setPublicContentFolderName(nextFolderName);
+    console.log(chalk.green(`  Upload folder set: BlankDrive/${nextFolderName}`));
+  }
+
+  if (mode === 'public') {
+    const resolvedFolderName = folderName || 'vault-data';
+    console.log(chalk.gray(`  Upload target: BlankDrive/${resolvedFolderName}/\n`));
+  } else {
+    console.log(chalk.gray('  Upload target: Hidden appDataFolder (not visible in Drive UI)\n'));
+  }
+
+  return { mode, folderName };
+}
+
 export async function uploadCommand(filePathArg?: string): Promise<void> {
   console.log(chalk.bold('\n  Upload File to Vault\n'));
+
+  // Duress mode - pretend to upload
+  if (isInDuressMode()) {
+    let filePath = filePathArg;
+
+    if (!filePath) {
+      console.log(chalk.gray('  Tip: Type "browse" to open file picker, or drag & drop a file\n'));
+
+      const { inputPath } = await inquirer.prompt<{ inputPath: string }>([
+        {
+          type: 'input',
+          name: 'inputPath',
+          message: 'File path:',
+          validate: (input: string) => input.trim() ? true : 'File path is required',
+        },
+      ]);
+      filePath = inputPath;
+    }
+
+    // Clean path
+    filePath = filePath.trim().replace(/^["']|["']$/g, '');
+
+    // Check if file exists (for realism)
+    try {
+      const stats = await fs.stat(filePath);
+      if (!stats.isFile()) {
+        console.log(chalk.red('  Error: Path is not a file.'));
+        return;
+      }
+
+      console.log(chalk.gray(`\n  File: ${path.basename(filePath)}`));
+      console.log(chalk.gray(`  Size: ${formatFileSize(stats.size)}`));
+      console.log('');
+
+      const defaultTitle = path.basename(filePath);
+      const { title } = await inquirer.prompt<{ title: string }>([
+        {
+          type: 'input',
+          name: 'title',
+          message: 'Title (optional):',
+          default: defaultTitle,
+        },
+      ]);
+
+      console.log(chalk.gray('  Encrypting and storing file...\n'));
+
+      const spinner = ora('Encrypting...').start();
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      spinner.succeed('File encrypted successfully!');
+
+      console.log('');
+      console.log(chalk.gray('  Uploading to cloud...\n'));
+
+      const uploadSpinner = ora('Uploading...').start();
+      await new Promise(resolve => setTimeout(resolve, 800));
+      uploadSpinner.succeed('Uploaded to cloud!');
+
+      console.log('');
+      console.log(chalk.green('  File Details:'));
+      console.log(chalk.gray(`  Title: ${title || defaultTitle}`));
+      console.log(chalk.gray(`  Original name: ${path.basename(filePath)}`));
+      console.log(chalk.gray(`  Size: ${formatFileSize(stats.size)}`));
+      console.log('');
+    } catch {
+      console.log(chalk.red(`  Error: File not found: ${filePath}`));
+    }
+    return;
+  }
 
   // Auto-authenticate with Google Drive (also handles vault unlock)
   if (!await ensureAuthenticated()) {
     return;
   }
+
+  const uploadTarget = await ensureUploadStorageTarget();
 
   // Get file path
   let filePath = filePathArg;
@@ -241,6 +359,12 @@ export async function uploadCommand(filePathArg?: string): Promise<void> {
 
       console.log('');
       console.log(chalk.green('  ✓ Uploaded to cloud!'));
+      if (uploadTarget.mode === 'public') {
+        const resolvedFolderName = uploadTarget.folderName || 'vault-data';
+        console.log(chalk.gray(`  Cloud location: Google Drive > BlankDrive/${resolvedFolderName}/`));
+      } else {
+        console.log(chalk.gray('  Cloud location: Hidden appDataFolder (not shown in Drive UI)'));
+      }
 
       // Clean up temp files after successful cloud upload
       await cleanupTempFiles(entry.id, chunkCount);
@@ -259,6 +383,9 @@ export async function uploadCommand(filePathArg?: string): Promise<void> {
     console.log(chalk.gray(`  Size: ${formatFileSize(entry.size)}`));
     console.log(chalk.gray(`  Type: ${entry.mimeType}`));
     console.log('');
+
+    // Log audit event
+    await logAuditEvent('file_uploaded', { entryId: entry.id, entryTitle: entry.title });
   } catch (error) {
     progressTracker.bar.stop();
     console.log('');

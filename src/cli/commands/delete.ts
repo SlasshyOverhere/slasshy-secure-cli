@@ -15,11 +15,52 @@ import { promptPassword, promptConfirm, promptSelectEntry } from '../prompts.js'
 import { initializeKeyManager } from '../../crypto/index.js';
 import { ensureAuthenticated } from '../ensureAuth.js';
 import { deleteFileFromCloud } from '../../storage/drive/index.js';
+import { logAuditEvent } from '../auditLog.js';
+import { isInDuressMode, getDecoyEntries } from '../duress.js';
 
 export async function deleteCommand(
   searchTerm?: string,
   options?: { force?: boolean }
 ): Promise<void> {
+  // Duress mode - pretend to delete
+  if (isInDuressMode()) {
+    const decoyEntries = getDecoyEntries();
+    const query = searchTerm?.toLowerCase() || '';
+
+    if (!query) {
+      console.log(chalk.yellow('\n  Please specify an entry to delete.\n'));
+      console.log(chalk.gray('  Usage: BLANK delete <number> or BLANK delete <title>\n'));
+      return;
+    }
+
+    const matches = decoyEntries.filter(e => e.title.toLowerCase().includes(query));
+
+    if (matches.length === 0) {
+      console.log(chalk.yellow(`\n  No entries found matching "${searchTerm}".\n`));
+      return;
+    }
+
+    const entry = matches[0]!;
+
+    if (!options?.force) {
+      console.log('');
+      const confirmed = await promptConfirm(
+        `Delete "${entry.title}"? This cannot be undone.`
+      );
+      if (!confirmed) {
+        console.log(chalk.gray('\n  Cancelled.\n'));
+        return;
+      }
+    }
+
+    const spinner = ora('Deleting entry...').start();
+    await new Promise(resolve => setTimeout(resolve, 500));
+    spinner.succeed('Entry deleted');
+
+    console.log(chalk.green(`\n  "${entry.title}" has been deleted from local and cloud.\n`));
+    return;
+  }
+
   // Auto-authenticate with Google Drive (also handles vault unlock)
   if (!await ensureAuthenticated()) {
     return;
@@ -29,7 +70,7 @@ export async function deleteCommand(
   const query = searchTerm || '';
   if (!query) {
     console.log(chalk.yellow('\n  Please specify an entry to delete.\n'));
-    console.log(chalk.gray('  Usage: slasshy delete <number> or slasshy delete <title>\n'));
+    console.log(chalk.gray('  Usage: BLANK delete <number> or BLANK delete <title>\n'));
     return;
   }
 
@@ -50,15 +91,13 @@ export async function deleteCommand(
       const fileEntries = allEntries.filter(e => vaultIndex?.entries[e.id]?.entryType === 'file');
       const passwordEntries = allEntries.filter(e => vaultIndex?.entries[e.id]?.entryType !== 'file');
 
-      // Check valid indexes
       const fileEntry = numIndex <= fileEntries.length ? fileEntries[numIndex - 1] : undefined;
       const passwordEntry = numIndex <= passwordEntries.length ? passwordEntries[numIndex - 1] : undefined;
 
       if (fileEntry && passwordEntry) {
         spinner.stop();
-        // Ambiguous index - ask user
         console.log(chalk.yellow(`\n  Ambiguous index: ${numIndex} matches both a file and a password.`));
-        const { targetType } = await inquirer.prompt<{ targetType: string }>([
+        const { targetType } = await inquirer.prompt<{ targetType: 'password' | 'file' }>([
           {
             type: 'list',
             name: 'targetType',
@@ -88,7 +127,7 @@ export async function deleteCommand(
         if (passwordEntries.length > 0) {
           console.log(chalk.gray(`  Passwords range: 1-${passwordEntries.length}`));
         }
-        console.log(chalk.gray(`  Use "list" to see all entries.\n`));
+        console.log(chalk.gray('  Use "list" to see entries.\n'));
         return;
       }
     } else {
@@ -180,6 +219,9 @@ export async function deleteCommand(
     deleteSpinner.start('Deleting local entry...');
     await deleteEntry(entry.id);
     deleteSpinner.succeed('Entry deleted');
+
+    // Log audit event
+    await logAuditEvent('entry_deleted', { entryId: entry.id, entryTitle: entry.title });
 
     if (cloudDeleteFailed) {
       console.log(chalk.yellow(`\n  "${entry.title}" deleted locally. Cloud files may need manual cleanup.\n`));

@@ -1,8 +1,29 @@
 import { z } from 'zod';
 
 // Entry types
-export const EntryType = z.enum(['password', 'file']);
+export const EntryType = z.enum(['password', 'file', 'note']);
 export type EntryTypeEnum = z.infer<typeof EntryType>;
+
+// TOTP data schema for 2FA support
+export const TOTPDataSchema = z.object({
+  secret: z.string().min(16).max(256), // Base32 encoded secret
+  issuer: z.string().max(128).optional(),
+  algorithm: z.enum(['SHA1', 'SHA256', 'SHA512']).optional(),
+  digits: z.number().int().min(6).max(8).optional(),
+  period: z.number().int().min(15).max(120).optional(),
+});
+
+export type TOTPData = z.infer<typeof TOTPDataSchema>;
+
+// Vault 2FA configuration schema (protects the vault itself)
+export const Vault2FAConfigSchema = z.object({
+  enabled: z.boolean(),
+  secret: z.string().min(16).max(256), // Base32 encoded TOTP secret
+  enabledAt: z.number().int().positive(), // Timestamp when 2FA was enabled
+  backupCodes: z.array(z.string()).optional(), // Hashed backup codes
+});
+
+export type Vault2FAConfig = z.infer<typeof Vault2FAConfigSchema>;
 
 // Base entry schema for password entries
 export const EntrySchema = z.object({
@@ -13,6 +34,11 @@ export const EntrySchema = z.object({
   password: z.string().max(4096).optional(),
   url: z.string().url().max(2048).optional().or(z.literal('')),
   notes: z.string().max(65536).optional(),
+  favorite: z.boolean().default(false), // Pinned/starred entry
+  category: z.string().max(64).optional(), // Category/folder for organization
+  passwordLastChanged: z.number().int().positive().optional(), // When password was last changed
+  passwordExpiryDays: z.number().int().positive().optional(), // Custom expiry period in days
+  totp: TOTPDataSchema.optional(), // TOTP/2FA data
   created: z.number().int().positive(),
   modified: z.number().int().positive(),
 });
@@ -29,11 +55,25 @@ export const FileEntrySchema = z.object({
   size: z.number().int().nonnegative(),
   checksum: z.string(), // SHA-256 hash for integrity
   notes: z.string().max(65536).optional(),
+  favorite: z.boolean().default(false), // Pinned/starred entry
   created: z.number().int().positive(),
   modified: z.number().int().positive(),
 });
 
 export type FileEntry = z.infer<typeof FileEntrySchema>;
+
+// Note entry schema (secure notes)
+export const NoteEntrySchema = z.object({
+  id: z.string().uuid(),
+  type: z.literal('note'),
+  title: z.string().min(1).max(256),
+  content: z.string().max(1048576), // Up to 1MB of text
+  favorite: z.boolean().default(false),
+  created: z.number().int().positive(),
+  modified: z.number().int().positive(),
+});
+
+export type NoteEntry = z.infer<typeof NoteEntrySchema>;
 
 // Cloud file chunk schema (for files stored in appDataFolder)
 export const CloudChunkSchema = z.object({
@@ -54,6 +94,8 @@ export const IndexEntrySchema = z.object({
   fileSize: z.number().int().nonnegative().optional(), // For file entries
   mimeType: z.string().optional(), // For file entries
   chunkCount: z.number().int().nonnegative().optional(), // Number of chunks for large files
+  favorite: z.boolean().default(false), // Pinned/starred entry (for fast listing)
+  category: z.string().max(64).optional(), // Category for organization (for fast filtering)
   // Cloud sync for file entries (hidden appDataFolder storage)
   cloudChunks: z.array(CloudChunkSchema).optional(), // Cloud storage chunk info
   cloudSyncStatus: z.enum(['pending', 'uploading', 'synced', 'error']).optional(),
@@ -75,6 +117,7 @@ export const VaultIndexSchema = z.object({
     lastSync: z.number().int().positive().nullable(),
     entryCount: z.number().int().nonnegative(),
   }),
+  vault2fa: Vault2FAConfigSchema.optional(), // Vault 2FA protection config
 });
 
 export type VaultIndex = z.infer<typeof VaultIndexSchema>;
@@ -115,6 +158,9 @@ export function createEntry(
     password?: string;
     url?: string;
     notes?: string;
+    favorite?: boolean;
+    category?: string;
+    passwordExpiryDays?: number;
   }
 ): Entry {
   const now = Date.now();
@@ -128,6 +174,10 @@ export function createEntry(
     password: data.password || undefined,
     url: data.url || undefined,
     notes: data.notes || undefined,
+    favorite: data.favorite || false,
+    category: data.category || undefined,
+    passwordLastChanged: data.password ? now : undefined, // Track when password was set
+    passwordExpiryDays: data.passwordExpiryDays || undefined,
     created: now,
     modified: now,
   });
@@ -142,6 +192,7 @@ export function createFileEntry(
     size: number;
     checksum: string;
     notes?: string;
+    favorite?: boolean;
   }
 ): FileEntry {
   const now = Date.now();
@@ -156,6 +207,7 @@ export function createFileEntry(
     size: data.size,
     checksum: data.checksum,
     notes: data.notes || undefined,
+    favorite: data.favorite || false,
     created: now,
     modified: now,
   });
@@ -169,6 +221,31 @@ export function validateEntry(entry: unknown): Entry {
 // Validate file entry
 export function validateFileEntry(entry: unknown): FileEntry {
   return FileEntrySchema.parse(entry);
+}
+
+// Validate note entry
+export function validateNoteEntry(entry: unknown): NoteEntry {
+  return NoteEntrySchema.parse(entry);
+}
+
+// Create a new note entry
+export function createNoteEntry(
+  title: string,
+  content: string,
+  favorite?: boolean
+): NoteEntry {
+  const now = Date.now();
+  const id = crypto.randomUUID();
+
+  return NoteEntrySchema.parse({
+    id,
+    type: 'note',
+    title,
+    content,
+    favorite: favorite || false,
+    created: now,
+    modified: now,
+  });
 }
 
 // Validate vault index
