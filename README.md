@@ -6,6 +6,11 @@
 
 Client-side, zero-knowledge vault for passwords, notes, TOTP secrets, and encrypted files synced to Google Drive.
 
+CLI command names after install:
+
+- `blankdrive` (default)
+- `BLANK` (backward-compatible alias)
+
 ## Client-Only Architecture
 
 BlankDrive is fully client-side:
@@ -50,19 +55,19 @@ npm link
 
 ```bash
 # 1) Initialize vault
-BLANK init
+blankdrive init
 
 # 2) Configure Google OAuth + connect Drive
-BLANK auth
+blankdrive auth
 
 # 3) Add password
-BLANK add
+blankdrive add
 
 # 4) Upload encrypted file
-BLANK upload
+blankdrive upload
 
 # 5) List entries
-BLANK list
+blankdrive list
 ```
 
 ## Google OAuth Setup (Step-by-Step)
