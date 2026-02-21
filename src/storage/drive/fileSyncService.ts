@@ -15,7 +15,7 @@ import {
   listAppDataFiles,
   hasAppDataAccess,
 } from './driveClient.js';
-import { decryptFromPayload } from '../../crypto/index.js';
+import { decryptFromPayload, decryptFromBuffer } from '../../crypto/index.js';
 import fsSync from 'fs';
 
 // Use temp folder for encrypted chunks
@@ -325,7 +325,14 @@ export async function streamDownloadToFile(
 
       // Decrypt chunk
       const aad = chunkCount === 1 ? entryId : `${entryId}_chunk_${chunk.chunkIndex}`;
-      const decryptedData = decryptFromPayload(encryptedData.toString('utf-8'), entryKey, aad);
+
+      let decryptedData: Buffer;
+      try {
+        decryptedData = decryptFromBuffer(encryptedData, entryKey, aad);
+      } catch (error) {
+        // Fallback for legacy Base64 files
+        decryptedData = decryptFromPayload(encryptedData.toString('utf-8'), entryKey, aad);
+      }
 
       // Write to file
       writeStream.write(decryptedData);
@@ -383,7 +390,14 @@ export async function streamDownloadToFile(
 
           // Decrypt chunk
           const aad = chunkCount === 1 ? entryId : `${entryId}_chunk_${chunk.chunkIndex}`;
-          const decryptedData = decryptFromPayload(encryptedData.toString('utf-8'), entryKey, aad);
+
+          let decryptedData: Buffer;
+          try {
+            decryptedData = decryptFromBuffer(encryptedData, entryKey, aad);
+          } catch (error) {
+            // Fallback for legacy Base64 files
+            decryptedData = decryptFromPayload(encryptedData.toString('utf-8'), entryKey, aad);
+          }
 
           // Store in map for ordered writing
           downloadedChunks.set(chunk.chunkIndex, decryptedData);

@@ -17,6 +17,8 @@ import {
   getEntryKey,
   initializeKeyManager,
   generateUUID,
+  encryptToBuffer,
+  decryptFromBuffer,
 } from '../../crypto/index.js';
 import {
   createEmptyIndex,
@@ -596,11 +598,11 @@ export async function addFileEntry(
         await fileHandle.read(chunkBuffer, 0, chunkBuffer.length, bytesProcessed);
 
         // Encrypt this chunk
-        const encryptedChunk = encryptToPayload(chunkBuffer, entryKey, `${entry.id}_chunk_${i}`);
+        const encryptedChunk = encryptToBuffer(chunkBuffer, entryKey, `${entry.id}_chunk_${i}`);
 
-        // Write chunk to temp folder
+        // Write chunk to temp folder (binary write, no encoding)
         const chunkPath = path.join(TEMP_FILES_DIR, `${entry.id}_${i}.bin`);
-        await fs.writeFile(chunkPath, encryptedChunk, 'utf-8');
+        await fs.writeFile(chunkPath, encryptedChunk);
 
         bytesProcessed += chunkBuffer.length;
         if (onProgress) {
@@ -613,9 +615,9 @@ export async function addFileEntry(
   } else {
     // Small file - use original approach
     const fileData = await fs.readFile(filePath);
-    const encryptedFileData = encryptToPayload(fileData, entryKey, entry.id);
+    const encryptedFileData = encryptToBuffer(fileData, entryKey, entry.id);
     const fileDataPath = path.join(TEMP_FILES_DIR, `${entry.id}.bin`);
-    await fs.writeFile(fileDataPath, encryptedFileData, 'utf-8');
+    await fs.writeFile(fileDataPath, encryptedFileData);
 
     if (onProgress) {
       onProgress(fileSize, fileSize);
@@ -711,8 +713,17 @@ export async function getFileData(
         throw new Error(`Missing chunk file ${i + 1}/${indexEntry.chunkCount}. File may be corrupted.`);
       }
 
-      const encryptedChunk = await fs.readFile(chunkPath, 'utf-8');
-      const decryptedChunk = decryptFromPayload(encryptedChunk, entryKey, `${id}_chunk_${i}`);
+      // Read as buffer (no encoding)
+      const encryptedChunk = await fs.readFile(chunkPath);
+      let decryptedChunk: Buffer;
+
+      try {
+        decryptedChunk = decryptFromBuffer(encryptedChunk, entryKey, `${id}_chunk_${i}`);
+      } catch (error) {
+        // Fallback for legacy Base64 files
+        decryptedChunk = decryptFromPayload(encryptedChunk.toString('utf-8'), entryKey, `${id}_chunk_${i}`);
+      }
+
       chunks.push(decryptedChunk);
 
       bytesProcessed += decryptedChunk.length;
@@ -733,8 +744,16 @@ export async function getFileData(
       throw new Error('Encrypted file data not found. File may have been deleted.');
     }
 
-    const encryptedData = await fs.readFile(fileDataPath, 'utf-8');
-    const result = decryptFromPayload(encryptedData, entryKey, id);
+    // Read as buffer (no encoding)
+    const encryptedData = await fs.readFile(fileDataPath);
+    let result: Buffer;
+
+    try {
+      result = decryptFromBuffer(encryptedData, entryKey, id);
+    } catch (error) {
+      // Fallback for legacy Base64 files
+      result = decryptFromPayload(encryptedData.toString('utf-8'), entryKey, id);
+    }
 
     if (onProgress && indexEntry.fileSize) {
       onProgress(indexEntry.fileSize, indexEntry.fileSize);
