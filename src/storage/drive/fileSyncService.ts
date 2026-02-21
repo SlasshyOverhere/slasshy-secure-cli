@@ -109,6 +109,16 @@ export async function uploadFileToCloud(
   let completedChunks = 0;
   let bytesUploaded = 0;
 
+  // Pre-fetch existing chunks to avoid N API calls
+  // ⚡ Performance Optimization: Batch file existence check
+  const existingFiles = await listAppDataFiles(`slasshy_${entryId}_chunk_`);
+  const existingFileMap = new Map<string, string>(); // name -> id
+  for (const file of existingFiles) {
+    if (file.name && file.id) {
+      existingFileMap.set(file.name, file.id);
+    }
+  }
+
   // Create upload tasks
   const uploadTasks = Array.from({ length: chunkCount }, (_, i) => {
     return async (): Promise<CloudFileChunk> => {
@@ -122,7 +132,8 @@ export async function uploadFileToCloud(
       const cloudFileName = `slasshy_${entryId}_chunk_${i}.bin`;
 
       // Check if already uploaded (idempotency)
-      const existingId = await findAppDataFile(cloudFileName);
+      // Use in-memory map instead of API call
+      const existingId = existingFileMap.get(cloudFileName);
       if (existingId) {
         bytesUploaded += chunkSizes[i] || 0;
         return {

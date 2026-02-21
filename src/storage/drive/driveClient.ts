@@ -573,20 +573,32 @@ export async function listAppDataFiles(
   namePattern?: string
 ): Promise<drive_v3.Schema$File[]> {
   const drive = getDriveClient();
+  const allFiles: drive_v3.Schema$File[] = [];
 
   let query = "'appDataFolder' in parents and trashed=false";
   if (namePattern) {
     query += ` and name contains '${namePattern}'`;
   }
 
-  const response = await drive.files.list({
-    spaces: 'appDataFolder',
-    q: query,
-    fields: 'files(id, name, size, createdTime, modifiedTime)',
-    pageSize: 1000,
-  });
+  let pageToken: string | undefined = undefined;
 
-  return response.data.files || [];
+  do {
+    const response = await drive.files.list({
+      spaces: 'appDataFolder',
+      q: query,
+      fields: 'nextPageToken, files(id, name, size, createdTime, modifiedTime)',
+      pageSize: 1000,
+      pageToken,
+    });
+
+    if (response.data.files) {
+      allFiles.push(...response.data.files);
+    }
+
+    pageToken = response.data.nextPageToken || undefined;
+  } while (pageToken);
+
+  return allFiles;
 }
 
 /**
