@@ -14,7 +14,7 @@ Release notes: see `CHANGELOG.md`
 - Fixed desktop installer runtime startup by bundling backend runtime files inside Tauri resources.
 - Added missing auth guard on `/api/cli/run` in Web UI (`ensureUnlocked()`), closing local unauthenticated CLI execution risk.
 - Optimized vault entry iteration path for large vaults with lower allocation overhead.
-- Kept desktop install/update flows via CLI: `BLANK desktop --install`, `BLANK update --check`, `BLANK update --install`.
+- Added npm-based CLI self-update flow: `BLANK update --check`, `BLANK update --install`.
 
 ## CLI Use Case Demo
 
@@ -263,7 +263,7 @@ Shell includes additional commands like:
 - `history`
 - `auditlog`
 
-Desktop and update are also available in shell mode:
+Desktop and CLI update are also available in shell mode:
 
 - `desktop --install`
 - `update --check`
@@ -293,7 +293,7 @@ BlankDrive Desktop is now officially launched for users who want a smoother and 
 - Same vault, same data, same commands
 - Faster boot and lighter footprint than Electron-based approach
 
-Install/update directly from CLI:
+Install desktop and update CLI directly from commands:
 
 ```bash
 BLANK desktop --install

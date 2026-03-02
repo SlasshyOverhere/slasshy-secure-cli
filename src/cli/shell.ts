@@ -181,7 +181,7 @@ const HELP_ENTRIES: HelpEntry[] = [
   { id: 'status', usage: 'status', run: 'status', description: 'Show vault + sync status', category: 'Vault', common: true },
   { id: 'web', usage: 'web|ui [--open --port <n>]', run: 'web --open', description: 'Launch local web UI', category: 'Vault', common: true },
   { id: 'desktop', usage: 'desktop [--release <tag>] [--install]', run: 'desktop', description: 'Download desktop installer', category: 'System' },
-  { id: 'update', usage: 'update [--check|--install|--scheduled]', run: 'update --check', description: 'Check/install desktop updates', category: 'System', common: true },
+  { id: 'update', usage: 'update [--check|--install|--scheduled]', run: 'update --check', description: 'Check/install CLI npm updates', category: 'System', common: true },
   { id: 'add', usage: 'add', run: 'add', description: 'Add password entry', category: 'Entries', common: true },
   { id: 'list', usage: 'list|ls [-f -t -c]', run: 'list', description: 'List entries with filters', category: 'Entries', common: true },
   { id: 'get', usage: 'get <search> [-c -s]', run: 'get', description: 'View/retrieve an entry', category: 'Entries', common: true },
@@ -1191,7 +1191,7 @@ export async function startShell(): Promise<void> {
         console.log(chalk.cyan('    init --restore') + chalk.gray('  Restore from cloud backup'));
         console.log(chalk.cyan('    web --open') + chalk.gray('    Open local web UI'));
         console.log(chalk.cyan('    desktop') + chalk.gray('       Download desktop installer'));
-        console.log(chalk.cyan('    update --check') + chalk.gray('  Check desktop updates'));
+        console.log(chalk.cyan('    update --check') + chalk.gray('  Check CLI updates via npm'));
         console.log(chalk.cyan('    exit') + chalk.gray('          Exit the application\n'));
       } else if (cmd !== '') {
         console.log(chalk.red('\n  Please create a vault first using "init"\n'));

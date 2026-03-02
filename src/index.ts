@@ -223,7 +223,7 @@ program
 // Update command
 program
   .command('update')
-  .description('Check/download/install desktop updates')
+  .description('Check and install CLI updates from npm')
   .option('-c, --check', 'Check for updates only')
   .option('-i, --install', 'Download and launch installer')
   .option('-r, --release <tag>', 'Specific release tag')
@@ -328,13 +328,19 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
   if (!args.length) {
-    await runScheduledUpdateCheckPrompt().catch(() => {});
+    const restarted = await runScheduledUpdateCheckPrompt().catch(() => false);
+    if (restarted) {
+      return;
+    }
     await startShell();
     return;
   }
 
   if (!shouldSkipAutoUpdateCheck(args[0])) {
-    await runScheduledUpdateCheckPrompt().catch(() => {});
+    const restarted = await runScheduledUpdateCheckPrompt().catch(() => false);
+    if (restarted) {
+      return;
+    }
   }
 
   // Parse arguments for CLI mode
