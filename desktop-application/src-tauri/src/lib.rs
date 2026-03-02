@@ -42,6 +42,7 @@ fn locate_backend_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 
     if let Ok(resource_dir) = app.path().resource_dir() {
         candidates.push(resource_dir.join("blankdrive-runtime"));
+        candidates.push(resource_dir);
     }
 
     for candidate in candidates {
@@ -52,7 +53,7 @@ fn locate_backend_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     }
 
     Err(
-        "Could not locate BlankDrive runtime. Expected `dist/index.js` in repository root. Run `npm run build` in the root project and retry."
+        "Could not locate BlankDrive runtime (`dist/index.js`). Reinstall the desktop app or set BLANKDRIVE_ROOT to a valid BlankDrive runtime folder."
             .to_string(),
     )
 }
