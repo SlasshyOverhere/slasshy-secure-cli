@@ -1,4 +1,4 @@
-export function renderWebUiHtml(): string {
+export function renderWebUiHtml(nonce: string): string {
   return `<!doctype html>
 <html lang="en" data-theme="dark">
 <head>
@@ -9,7 +9,7 @@ export function renderWebUiHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <style>
+  <style nonce="${nonce}">
 :root {
   --font-sans: 'Public Sans', 'Segoe UI', sans-serif;
   --font-mono: 'IBM Plex Mono', 'Consolas', monospace;
@@ -216,8 +216,8 @@ body::before {
 }
 
 .vault-controls {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   padding: 14px 16px;
@@ -236,6 +236,7 @@ body::before {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  margin-left: auto;
 }
 
 #vaultPath {
@@ -529,13 +530,11 @@ input[type="file"]::file-selector-button {
 }
 
 @media (max-width: 1240px) {
-  .vault-controls {
-    grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto;
-  }
-
   .vault-meta {
-    grid-column: 1 / -1;
+    width: 100%;
     justify-content: flex-start;
+    margin-left: 0;
+    margin-top: 4px;
   }
 
   .main-grid {
@@ -558,7 +557,8 @@ input[type="file"]::file-selector-button {
   }
 
   .vault-controls {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .vault-controls form {
@@ -625,11 +625,11 @@ input[type="file"]::file-selector-button {
     <!-- ═══════════ VAULT CONTROLS ═══════════ -->
     <section class="vault-controls">
       <form id="initForm">
-        <input id="initPassword" type="password" autocomplete="new-password" placeholder="New master password" required style="max-width:260px">
+        <input id="initPassword" type="password" autocomplete="new-password" placeholder="New master password" aria-label="New master password" required style="max-width:260px">
         <button type="submit" class="btn-danger btn-sm">Create Vault</button>
       </form>
       <form id="unlockForm">
-        <input id="unlockPassword" type="password" autocomplete="current-password" placeholder="Master password" required style="max-width:260px">
+        <input id="unlockPassword" type="password" autocomplete="current-password" placeholder="Master password" aria-label="Master password" required style="max-width:260px">
         <button type="submit" class="btn-primary btn-sm">Unlock</button>
       </form>
       <button id="lockButton" type="button" class="btn-ghost btn-sm">Lock</button>
@@ -649,8 +649,8 @@ input[type="file"]::file-selector-button {
           <button id="reloadEntries" type="button" class="btn-ghost btn-sm">Reload</button>
         </div>
         <div class="filters">
-          <input id="search" type="search" placeholder="Search entries…">
-          <select id="typeFilter"><option value="all">All</option><option value="password">Passwords</option><option value="note">Notes</option><option value="file">Files</option></select>
+          <input id="search" type="search" placeholder="Search entries…" aria-label="Search entries">
+          <select id="typeFilter" aria-label="Filter by type"><option value="all">All</option><option value="password">Passwords</option><option value="note">Notes</option><option value="file">Files</option></select>
         </div>
         <ul id="entryList" class="entry-list"></ul>
       </aside>
@@ -660,16 +660,16 @@ input[type="file"]::file-selector-button {
         <div class="card-title"><span><span class="icon"></span>Add Entry</span></div>
         <p class="hint" style="margin-bottom:12px">Create passwords, secure notes, or upload files.</p>
         <form id="createForm" class="form-stack">
-          <select id="createType"><option value="password">Password Entry</option><option value="note">Secure Note</option></select>
-          <input id="createTitle" type="text" maxlength="256" placeholder="Title" required>
+          <select id="createType" aria-label="Entry type"><option value="password">Password Entry</option><option value="note">Secure Note</option></select>
+          <input id="createTitle" type="text" maxlength="256" placeholder="Title" aria-label="Entry title" required>
           <div id="createPwd" class="form-stack">
-            <input id="createUsername" type="text" maxlength="256" placeholder="Username (optional)">
-            <input id="createPassword" type="text" maxlength="4096" placeholder="Password (optional)">
-            <input id="createUrl" type="url" maxlength="2048" placeholder="URL (optional)">
-            <input id="createCategory" type="text" maxlength="64" placeholder="Category (optional)">
-            <textarea id="createNotes" maxlength="65536" placeholder="Notes (optional)"></textarea>
+            <input id="createUsername" type="text" maxlength="256" placeholder="Username (optional)" aria-label="Username">
+            <input id="createPassword" type="text" maxlength="4096" placeholder="Password (optional)" aria-label="Password">
+            <input id="createUrl" type="url" maxlength="2048" placeholder="URL (optional)" aria-label="URL">
+            <input id="createCategory" type="text" maxlength="64" placeholder="Category (optional)" aria-label="Category">
+            <textarea id="createNotes" maxlength="65536" placeholder="Notes (optional)" aria-label="Notes"></textarea>
           </div>
-          <div id="createNote" class="form-stack hidden"><textarea id="createContent" maxlength="1048576" placeholder="Note content"></textarea></div>
+          <div id="createNote" class="form-stack hidden"><textarea id="createContent" maxlength="1048576" placeholder="Note content" aria-label="Note content"></textarea></div>
           <button id="createBtn" type="submit" class="btn-primary">Save Entry</button>
         </form>
       </div>
@@ -679,9 +679,9 @@ input[type="file"]::file-selector-button {
         <div class="card-title"><span><span class="icon"></span>File Upload</span></div>
         <p class="hint" style="margin-bottom:12px">Encrypt and store files in your vault. Large files are uploaded in chunks.</p>
         <form id="uploadForm" class="form-stack">
-          <input id="uploadFile" type="file" required>
-          <input id="uploadTitle" type="text" maxlength="256" placeholder="Custom title (optional)">
-          <textarea id="uploadNotes" maxlength="65536" placeholder="Notes (optional)"></textarea>
+          <input id="uploadFile" type="file" required aria-label="File to upload">
+          <input id="uploadTitle" type="text" maxlength="256" placeholder="Custom title (optional)" aria-label="File title">
+          <textarea id="uploadNotes" maxlength="65536" placeholder="Notes (optional)" aria-label="File notes"></textarea>
           <button id="uploadBtn" type="submit" class="btn-primary">Upload File</button>
         </form>
       </div>
@@ -691,22 +691,23 @@ input[type="file"]::file-selector-button {
         <div class="card-title"><span><span class="icon"></span>Entry Detail</span></div>
         <p id="detailHint" class="hint">Select an entry to inspect, edit, or download.</p>
         <form id="detailForm" class="form-stack hidden">
-          <input id="detailTitle" type="text" maxlength="256" required>
+          <input id="detailTitle" type="text" maxlength="256" required aria-label="Entry title">
           <p style="display:flex;align-items:center;gap:10px">
             <span id="detailType" class="pill password">password</span>
             <span id="detailMod" class="meta-text" style="font-size:.78rem"></span>
           </p>
           <div id="detailPwd" class="form-stack">
-            <input id="detailUsername" type="text" maxlength="256" placeholder="Username">
-            <input id="detailPassword" type="text" maxlength="4096" placeholder="Password">
-            <input id="detailUrl" type="url" maxlength="2048" placeholder="URL">
-            <input id="detailCategory" type="text" maxlength="64" placeholder="Category">
-            <textarea id="detailNotes" maxlength="65536" placeholder="Notes"></textarea>
+            <input id="detailUsername" type="text" maxlength="256" placeholder="Username" aria-label="Username">
+            <input id="detailPassword" type="text" maxlength="4096" placeholder="Password" aria-label="Password">
+            <input id="detailUrl" type="url" maxlength="2048" placeholder="URL" aria-label="URL">
+            <input id="detailCategory" type="text" maxlength="64" placeholder="Category" aria-label="Category">
+            <textarea id="detailNotes" maxlength="65536" placeholder="Notes" aria-label="Notes"></textarea>
           </div>
-          <div id="detailNote" class="form-stack hidden"><textarea id="detailContent" maxlength="1048576" placeholder="Note content"></textarea></div>
+          <div id="detailNote" class="form-stack hidden"><textarea id="detailContent" maxlength="1048576" placeholder="Note content" aria-label="Note content"></textarea></div>
           <div id="detailFile" class="form-stack hidden"><p id="fileInfo" class="hint"></p></div>
           <div class="form-actions">
             <button id="saveDetail" type="submit" class="btn-primary">Save Changes</button>
+            <button id="copyPassword" type="button" class="btn-ghost hidden">Copy Password</button>
             <button id="downloadFile" type="button" class="btn-ghost hidden">Download</button>
             <button id="toggleFav" type="button" class="btn-ghost">Favorite</button>
             <button id="deleteEntry" type="button" class="btn-danger">Delete</button>
@@ -719,7 +720,7 @@ input[type="file"]::file-selector-button {
         <div class="card-title"><span><span class="icon"></span>CLI Console</span></div>
         <p class="hint">Run BLANK CLI commands directly from Web UI (except launching another web UI instance).</p>
         <form id="cliForm" class="form-stack" style="margin-top:12px">
-          <input id="cliCommand" type="text" maxlength="2048" placeholder="Example: sync --status" autocomplete="off">
+          <input id="cliCommand" type="text" maxlength="2048" placeholder="Example: sync --status" autocomplete="off" aria-label="CLI command">
           <div class="form-actions">
             <button id="runCliBtn" type="submit" class="btn-primary">Run Command</button>
             <button id="cliQuickStatus" type="button" class="btn-ghost">status</button>
@@ -731,9 +732,9 @@ input[type="file"]::file-selector-button {
       </section>
     </section>
   </div>
-  <div id="toast" class="toast"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <script type="module">
+  <script type="module" nonce="${nonce}">
     const DEFAULT_UPLOAD_CHUNK_BYTES=2*1024*1024;
 
     /* ── Theme ── */
@@ -752,7 +753,7 @@ input[type="file"]::file-selector-button {
       lockButton:document.getElementById('lockButton'),refreshButton:document.getElementById('refreshButton'),reloadEntries:document.getElementById('reloadEntries'),search:document.getElementById('search'),typeFilter:document.getElementById('typeFilter'),entryList:document.getElementById('entryList'),
       createForm:document.getElementById('createForm'),createType:document.getElementById('createType'),createTitle:document.getElementById('createTitle'),createPwd:document.getElementById('createPwd'),createUsername:document.getElementById('createUsername'),createPassword:document.getElementById('createPassword'),createUrl:document.getElementById('createUrl'),createCategory:document.getElementById('createCategory'),createNotes:document.getElementById('createNotes'),createNote:document.getElementById('createNote'),createContent:document.getElementById('createContent'),createBtn:document.getElementById('createBtn'),
       uploadForm:document.getElementById('uploadForm'),uploadFile:document.getElementById('uploadFile'),uploadTitle:document.getElementById('uploadTitle'),uploadNotes:document.getElementById('uploadNotes'),uploadBtn:document.getElementById('uploadBtn'),
-      detailHint:document.getElementById('detailHint'),detailForm:document.getElementById('detailForm'),detailTitle:document.getElementById('detailTitle'),detailType:document.getElementById('detailType'),detailMod:document.getElementById('detailMod'),detailPwd:document.getElementById('detailPwd'),detailUsername:document.getElementById('detailUsername'),detailPassword:document.getElementById('detailPassword'),detailUrl:document.getElementById('detailUrl'),detailCategory:document.getElementById('detailCategory'),detailNotes:document.getElementById('detailNotes'),detailNote:document.getElementById('detailNote'),detailContent:document.getElementById('detailContent'),detailFile:document.getElementById('detailFile'),fileInfo:document.getElementById('fileInfo'),saveDetail:document.getElementById('saveDetail'),downloadFile:document.getElementById('downloadFile'),toggleFav:document.getElementById('toggleFav'),deleteEntry:document.getElementById('deleteEntry'),
+      detailHint:document.getElementById('detailHint'),detailForm:document.getElementById('detailForm'),detailTitle:document.getElementById('detailTitle'),detailType:document.getElementById('detailType'),detailMod:document.getElementById('detailMod'),detailPwd:document.getElementById('detailPwd'),detailUsername:document.getElementById('detailUsername'),detailPassword:document.getElementById('detailPassword'),detailUrl:document.getElementById('detailUrl'),detailCategory:document.getElementById('detailCategory'),detailNotes:document.getElementById('detailNotes'),detailNote:document.getElementById('detailNote'),detailContent:document.getElementById('detailContent'),detailFile:document.getElementById('detailFile'),fileInfo:document.getElementById('fileInfo'),saveDetail:document.getElementById('saveDetail'),copyPassword:document.getElementById('copyPassword'),downloadFile:document.getElementById('downloadFile'),toggleFav:document.getElementById('toggleFav'),deleteEntry:document.getElementById('deleteEntry'),
       cliForm:document.getElementById('cliForm'),cliCommand:document.getElementById('cliCommand'),runCliBtn:document.getElementById('runCliBtn'),cliQuickStatus:document.getElementById('cliQuickStatus'),cliQuickSync:document.getElementById('cliQuickSync'),cliQuickSettings:document.getElementById('cliQuickSettings'),cliOutput:document.getElementById('cliOutput'),
       toast:document.getElementById('toast')};
 
@@ -763,7 +764,7 @@ input[type="file"]::file-selector-button {
     function showToast(msg){el.toast.textContent=msg;el.toast.classList.add('show');if(toastTimer)clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.toast.classList.remove('show'),2800)}
     function busy(btn,on,label,idle){if(!btn)return;if(!btn.dataset.idle)btn.dataset.idle=idle||btn.textContent||'';btn.disabled=on;btn.textContent=on?label:(idle||btn.dataset.idle)}
     function switchCreate(){const note=el.createType.value==='note';el.createPwd.classList.toggle('hidden',note);el.createNote.classList.toggle('hidden',!note)}
-    function switchDetail(type){const note=type==='note',file=type==='file';el.detailPwd.classList.toggle('hidden',note||file);el.detailNote.classList.toggle('hidden',!note);el.detailFile.classList.toggle('hidden',!file);el.saveDetail.disabled=file;el.downloadFile.classList.toggle('hidden',!file)}
+    function switchDetail(type){const note=type==='note',file=type==='file';el.detailPwd.classList.toggle('hidden',note||file);el.detailNote.classList.toggle('hidden',!note);el.detailFile.classList.toggle('hidden',!file);el.saveDetail.disabled=file;el.copyPassword.classList.toggle('hidden',note||file);el.downloadFile.classList.toggle('hidden',!file)}
     function queryUrl(){const p=new URLSearchParams();const q=String(el.search.value||'').trim();const t=String(el.typeFilter.value||'all');if(q)p.set('query',q);if(t!=='all')p.set('type',t);const qs=p.toString();return qs?'/api/entries?'+qs:'/api/entries'}
 
     async function api(path,opt){const o=opt?Object.assign({},opt):{};const m=String(o.method||'GET').toUpperCase();const h=new Headers(o.headers||{});if(m!=='GET')h.set('X-BlankDrive-UI','1');if(o.body!==undefined&&typeof o.body!=='string'){h.set('Content-Type','application/json');o.body=JSON.stringify(o.body)}o.method=m;o.headers=h;const r=await fetch(path,o);const ct=r.headers.get('content-type')||'';const d=ct.includes('application/json')?await r.json():await r.text();if(!r.ok){const msg=d&&typeof d==='object'&&d.error?d.error:'Request failed ('+r.status+')';throw new Error(msg)}return d}
@@ -776,8 +777,17 @@ input[type="file"]::file-selector-button {
       else{el.badge.textContent='Unlocked';el.badge.className='badge ok';el.meta.textContent='Created: '+dt(s.status.stats?s.status.stats.created:null)}
       el.entryCount.textContent='Entries: '+String(s.status.stats?s.status.stats.entryCount:0);
       el.vaultPath.textContent=s.status.vaultPath||'';
+
+      el.initForm.classList.toggle('hidden', s.status.vaultExists);
+      el.unlockForm.classList.toggle('hidden', !s.status.vaultExists || s.status.unlocked);
+      el.lockButton.classList.toggle('hidden', !s.status.unlocked);
+
       setUnlocked(Boolean(s.status.unlocked));
-      if(!s.status.unlocked){s.entries=[];s.selectedId=null;s.selected=null;renderEntries();showDetail('Unlock vault to inspect entries.')}
+      if(!s.status.unlocked){
+        s.entries=[];s.selectedId=null;s.selected=null;renderEntries();showDetail('Unlock vault to inspect entries.');
+        if(!s.status.vaultExists) setTimeout(()=>el.initPassword.focus(), 100);
+        else setTimeout(()=>el.unlockPassword.focus(), 100);
+      }
     }
 
     function renderEntries(){
@@ -827,6 +837,7 @@ input[type="file"]::file-selector-button {
     async function onCreate(ev){ev.preventDefault();if(!s.status.unlocked){showToast('Unlock vault first.');return}busy(el.createBtn,true,'Saving…','Save Entry');try{const d=await api('/api/entries',{method:'POST',body:createPayload()});el.createForm.reset();switchCreate();await refreshStatus(false);await refreshEntries();showToast('Entry created.');if(d&&d.entry&&d.entry.id)await loadEntry(d.entry.id)}catch(err){showToast(err instanceof Error?err.message:'Create failed.')}finally{busy(el.createBtn,false,'Saving…','Save Entry')}}
     async function onUpload(ev){ev.preventDefault();if(!s.status.unlocked){showToast('Unlock vault first.');return}const file=el.uploadFile.files&&el.uploadFile.files[0];if(!file){showToast('Choose a file first.');return}busy(el.uploadBtn,true,'Preparing…','Upload File');try{const d=await uploadInChunks(file,String(el.uploadTitle.value||'').trim(),String(el.uploadNotes.value||''));el.uploadForm.reset();await refreshStatus(false);await refreshEntries();showToast('File uploaded ('+formatBytes(file.size)+').');if(d&&d.entry&&d.entry.id)await loadEntry(d.entry.id)}catch(err){showToast(err instanceof Error?err.message:'Upload failed.')}finally{busy(el.uploadBtn,false,'Uploading…','Upload File')}}
     async function onSaveDetail(ev){ev.preventDefault();if(!s.selectedId||!s.selected)return;if(nt(s.selected.type)==='file'){showToast('File metadata is read-only.');return}busy(el.saveDetail,true,'Saving…','Save Changes');try{const d=await api('/api/entries/'+encodeURIComponent(s.selectedId),{method:'PUT',body:updatePayload()});s.selected=d.entry||s.selected;fillDetail(s.selected);await refreshStatus(false);await refreshEntries();showToast('Entry updated.')}catch(err){showToast(err instanceof Error?err.message:'Update failed.')}finally{busy(el.saveDetail,false,'Saving…','Save Changes')}}
+    async function onCopyPassword(){if(!s.selected)return;try{await navigator.clipboard.writeText(String(el.detailPassword.value||''));showToast('Password copied.')}catch(err){showToast('Failed to copy.')}}
     async function onDownload(){if(!s.selectedId||!s.selected||nt(s.selected.type)!=='file'){showToast('Select a file entry first.');return}busy(el.downloadFile,true,'Downloading…','Download');try{const r=await fetch('/api/files/'+encodeURIComponent(s.selectedId)+'/download',{method:'GET',headers:{'X-BlankDrive-UI':'1'}});if(!r.ok){let msg='Download failed ('+r.status+')';try{const p=await r.json();if(p&&p.error)msg=p.error}catch{}throw new Error(msg)}const blob=await r.blob();const fallback=s.selected.originalName||'download.bin';const fileName=parseDownloadName(r.headers.get('content-disposition'),fallback);const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=fileName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);showToast('File download started.')}catch(err){showToast(err instanceof Error?err.message:'Download failed.')}finally{busy(el.downloadFile,false,'Downloading…','Download')}}
     async function onToggleFav(){if(!s.selectedId)return;busy(el.toggleFav,true,'…','Favorite');try{await api('/api/entries/'+encodeURIComponent(s.selectedId)+'/favorite',{method:'POST'});await refreshEntries();if(s.selectedId)await loadEntry(s.selectedId);showToast('Favorite toggled.')}catch(err){showToast(err instanceof Error?err.message:'Failed.')}finally{busy(el.toggleFav,false,'…','Favorite')}}
     async function onDelete(){if(!s.selectedId)return;if(!confirm('Delete this entry permanently?'))return;busy(el.deleteEntry,true,'Deleting…','Delete');try{await api('/api/entries/'+encodeURIComponent(s.selectedId),{method:'DELETE'});s.selectedId=null;s.selected=null;showDetail('Entry deleted.');await refreshStatus(false);await refreshEntries();showToast('Entry deleted.')}catch(err){showToast(err instanceof Error?err.message:'Delete failed.')}finally{busy(el.deleteEntry,false,'Deleting…','Delete')}}
@@ -847,6 +858,7 @@ input[type="file"]::file-selector-button {
     el.createForm.addEventListener('submit',ev=>{void onCreate(ev)});
     el.uploadForm.addEventListener('submit',ev=>{void onUpload(ev)});
     el.detailForm.addEventListener('submit',ev=>{void onSaveDetail(ev)});
+    el.copyPassword.addEventListener('click',()=>{void onCopyPassword()});
     el.downloadFile.addEventListener('click',()=>{void onDownload()});
     el.toggleFav.addEventListener('click',()=>{void onToggleFav()});
     el.deleteEntry.addEventListener('click',()=>{void onDelete()});

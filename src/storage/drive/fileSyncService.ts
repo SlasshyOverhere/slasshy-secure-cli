@@ -98,26 +98,26 @@ export async function uploadFileToCloud(
 ): Promise<CloudFileChunk[]> {
   await ensureDriveAuthenticated();
 
-  // Calculate total size first
-  let totalBytes = 0;
-  const chunkSizes: number[] = [];
-
-  for (let i = 0; i < chunkCount; i++) {
-    let chunkPath: string;
+  // Calculate total size first (parallelized for performance)
+  const chunkPaths = Array.from({ length: chunkCount }, (_, i) => {
     if (chunkCount === 1) {
-      chunkPath = path.join(TEMP_FILES_DIR, `${entryId}.bin`);
-    } else {
-      chunkPath = path.join(TEMP_FILES_DIR, `${entryId}_${i}.bin`);
+      return path.join(TEMP_FILES_DIR, `${entryId}.bin`);
     }
+    return path.join(TEMP_FILES_DIR, `${entryId}_${i}.bin`);
+  });
 
-    try {
-      const stats = await fs.stat(chunkPath);
-      chunkSizes[i] = stats.size;
-      totalBytes += stats.size;
-    } catch {
-      chunkSizes[i] = 0;
-    }
-  }
+  const chunkSizes = await Promise.all(
+    chunkPaths.map(async (chunkPath) => {
+      try {
+        const stats = await fs.stat(chunkPath);
+        return stats.size;
+      } catch {
+        return 0;
+      }
+    })
+  );
+
+  const totalBytes = chunkSizes.reduce((sum, size) => sum + size, 0);
 
   let bytesUploaded = 0;
   const existingFiles = await listAppDataFiles(`slasshy_${entryId}_chunk_`);

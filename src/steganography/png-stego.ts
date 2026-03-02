@@ -61,34 +61,6 @@ export async function savePNG(png: PNG, outputPath: string): Promise<void> {
 }
 
 /**
- * Convert buffer to bit array
- */
-function bufferToBits(buffer: Buffer): number[] {
-  const bits: number[] = [];
-  for (const byte of buffer) {
-    for (let i = 7; i >= 0; i--) {
-      bits.push((byte >> i) & 1);
-    }
-  }
-  return bits;
-}
-
-/**
- * Convert bit array to buffer
- */
-function bitsToBuffer(bits: number[]): Buffer {
-  const bytes: number[] = [];
-  for (let i = 0; i < bits.length; i += 8) {
-    let byte = 0;
-    for (let j = 0; j < 8 && i + j < bits.length; j++) {
-      byte = (byte << 1) | (bits[i + j] ?? 0);
-    }
-    bytes.push(byte);
-  }
-  return Buffer.from(bytes);
-}
-
-/**
  * Create header for embedded data
  */
 function createHeader(dataLength: number, checksum: string): Buffer {
@@ -141,34 +113,24 @@ export async function embedInPNG(
   const checksum = calculateChecksum(data);
   const header = createHeader(data.length, checksum);
   const payload = Buffer.concat([header, data]);
-  const bits = bufferToBits(payload);
 
-  let bitIndex = 0;
+  let byteIndex = 0;
+  let bitOffset = 7;
+  const totalBytes = payload.length;
 
-  // Embed bits into LSB of RGB channels
-  for (let y = 0; y < png.height && bitIndex < bits.length; y++) {
-    for (let x = 0; x < png.width && bitIndex < bits.length; x++) {
-      const idx = (png.width * y + x) * 4; // RGBA
+  // ⚡ Bolt Optimization:
+  // - Removing bufferToBits which creates an enormous number[]
+  // - Direct bitwise buffer manipulation saves massive memory and CPU time
+  for (let i = 0; i < png.data.length && byteIndex < totalBytes; i++) {
+    if ((i & 3) === 3) continue; // Skip alpha channel faster
 
-      // Modify R channel LSB
-      if (bitIndex < bits.length) {
-        png.data[idx] = (png.data[idx]! & 0xFE) | bits[bitIndex]!;
-        bitIndex++;
-      }
+    const bit = (payload[byteIndex]! >> bitOffset) & 1;
+    png.data[i] = (png.data[i]! & 0xFE) | bit;
 
-      // Modify G channel LSB
-      if (bitIndex < bits.length) {
-        png.data[idx + 1] = (png.data[idx + 1]! & 0xFE) | bits[bitIndex]!;
-        bitIndex++;
-      }
-
-      // Modify B channel LSB
-      if (bitIndex < bits.length) {
-        png.data[idx + 2] = (png.data[idx + 2]! & 0xFE) | bits[bitIndex]!;
-        bitIndex++;
-      }
-
-      // Alpha channel is not modified (would be noticeable)
+    bitOffset--;
+    if (bitOffset < 0) {
+      bitOffset = 7;
+      byteIndex++;
     }
   }
 
@@ -188,70 +150,62 @@ export async function embedInPNG(
 export async function extractFromPNG(imagePath: string): Promise<ExtractResult> {
   const png = await loadPNG(imagePath);
 
-  // Extract all LSB bits
-  const bits: number[] = [];
-  const maxBits = png.width * png.height * 3;
+  // ⚡ Bolt Optimization:
+  // - Removing bitsToBuffer and bits array allocation (saves multi-megabyte allocations)
+  // - Direct bit extraction directly decodes into header and payload buffers
+  const headerBuffer = Buffer.alloc(HEADER_SIZE);
+  let byteIndex = 0;
+  let bitOffset = 7;
 
-  for (let y = 0; y < png.height; y++) {
-    for (let x = 0; x < png.width; x++) {
-      const idx = (png.width * y + x) * 4;
+  let headerInfo: { length: number; checksum: string } | null = null;
+  let payloadBuffer: Buffer | null = null;
 
-      // Extract R channel LSB
-      bits.push(png.data[idx]! & 1);
+  for (let i = 0; i < png.data.length; i++) {
+    if ((i & 3) === 3) continue; // Skip alpha channel
 
-      // Extract G channel LSB
-      bits.push(png.data[idx + 1]! & 1);
+    const bit = png.data[i]! & 1;
 
-      // Extract B channel LSB
-      bits.push(png.data[idx + 2]! & 1);
+    if (!headerInfo) {
+      headerBuffer[byteIndex] = headerBuffer[byteIndex]! | (bit << bitOffset);
+      bitOffset--;
 
-      // Stop if we have enough bits for header
-      if (bits.length >= HEADER_SIZE * 8) {
-        // Parse header to get actual data length
-        const headerBits = bits.slice(0, HEADER_SIZE * 8);
-        const headerBuffer = bitsToBuffer(headerBits);
-        const headerInfo = parseHeader(headerBuffer);
+      if (bitOffset < 0) {
+        bitOffset = 7;
+        byteIndex++;
 
-        if (headerInfo) {
-          const totalBitsNeeded = (HEADER_SIZE + headerInfo.length) * 8;
-          if (bits.length >= totalBitsNeeded) {
-            // Extract data
-            const dataBits = bits.slice(HEADER_SIZE * 8, totalBitsNeeded);
-            const data = bitsToBuffer(dataBits);
-
-            // Verify checksum
-            if (!verifyChecksum(data, headerInfo.checksum)) {
+        if (byteIndex === HEADER_SIZE) {
+          headerInfo = parseHeader(headerBuffer);
+          if (!headerInfo) throw new Error('No hidden data found in image');
+          if (headerInfo.length === 0) {
+            const emptyPayload = Buffer.alloc(0);
+            if (!verifyChecksum(emptyPayload, headerInfo.checksum)) {
               throw new Error('Data integrity check failed: checksum mismatch');
             }
-
-            return {
-              data,
-              checksum: headerInfo.checksum,
-            };
+            return { data: emptyPayload, checksum: headerInfo.checksum };
           }
+          payloadBuffer = Buffer.alloc(headerInfo.length);
+          byteIndex = 0; // Reset for payload
+        }
+      }
+    } else {
+      payloadBuffer![byteIndex] = payloadBuffer![byteIndex]! | (bit << bitOffset);
+      bitOffset--;
+
+      if (bitOffset < 0) {
+        bitOffset = 7;
+        byteIndex++;
+
+        if (byteIndex === headerInfo.length) {
+          if (!verifyChecksum(payloadBuffer!, headerInfo.checksum)) {
+            throw new Error('Data integrity check failed: checksum mismatch');
+          }
+          return { data: payloadBuffer!, checksum: headerInfo.checksum };
         }
       }
     }
   }
 
-  // Full extraction if header wasn't found early
-  const allData = bitsToBuffer(bits);
-  const headerInfo = parseHeader(allData.subarray(0, HEADER_SIZE));
-
-  if (!headerInfo) {
-    throw new Error('No hidden data found in image');
-  }
-
-  const data = allData.subarray(HEADER_SIZE, HEADER_SIZE + headerInfo.length);
-
-  if (!verifyChecksum(data, headerInfo.checksum)) {
-    throw new Error('Data integrity check failed: checksum mismatch');
-  }
-
-  return {
-    data,
-    checksum: headerInfo.checksum,
-  };
+  throw new Error('Incomplete data');
 }
 
 /**
@@ -261,21 +215,25 @@ export async function hasEmbeddedData(imagePath: string): Promise<boolean> {
   try {
     const png = await loadPNG(imagePath);
 
-    // Extract just enough bits for magic bytes
-    const bits: number[] = [];
+    // Extract just enough bits for magic bytes (4 bytes = 32 bits)
+    const magicBuffer = Buffer.alloc(4);
+    let byteIndex = 0;
+    let bitOffset = 7;
 
-    outer: for (let y = 0; y < png.height; y++) {
-      for (let x = 0; x < png.width; x++) {
-        const idx = (png.width * y + x) * 4;
-        bits.push(png.data[idx]! & 1);
-        bits.push(png.data[idx + 1]! & 1);
-        bits.push(png.data[idx + 2]! & 1);
+    for (let i = 0; i < png.data.length; i++) {
+      if ((i & 3) === 3) continue; // Skip alpha channel
 
-        if (bits.length >= 32) break outer; // 4 bytes = 32 bits
+      const bit = png.data[i]! & 1;
+      magicBuffer[byteIndex] = magicBuffer[byteIndex]! | (bit << bitOffset);
+
+      bitOffset--;
+      if (bitOffset < 0) {
+        bitOffset = 7;
+        byteIndex++;
+        if (byteIndex === 4) break;
       }
     }
 
-    const magicBuffer = bitsToBuffer(bits.slice(0, 32));
     return magicBuffer.equals(MAGIC_BYTES);
   } catch {
     return false;

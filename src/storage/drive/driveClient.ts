@@ -1169,12 +1169,15 @@ export async function downloadFromAppData(
 ): Promise<void> {
   const drive = getDriveClient();
 
-  // First get file size
-  const fileMeta = await drive.files.get({
-    fileId,
-    fields: 'size',
-  });
-  const totalBytes = parseInt(fileMeta.data.size || '0', 10);
+  // First get file size (only if progress tracking is needed)
+  let totalBytes = 0;
+  if (onProgress) {
+    const fileMeta = await drive.files.get({
+      fileId,
+      fields: 'size',
+    });
+    totalBytes = parseInt(fileMeta.data.size || '0', 10);
+  }
 
   const response = await drive.files.get(
     { fileId, alt: 'media' },
