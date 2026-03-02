@@ -6,6 +6,18 @@ All notable changes to this project will be documented in this file.
 
 - No unreleased entries yet.
 
+## [0.1.2] - 2026-03-03
+
+### Fixed
+
+- Desktop installer/runtime startup issue by bundling root runtime artifacts into Tauri resources (`blankdrive-runtime/dist`, `package.json`, logo asset).
+- Added missing `ensureUnlocked()` guard to `/api/cli/run` in the Web UI server.
+
+### Improved
+
+- Large vault iteration path in `vaultManager` now avoids `Object.entries(...)` tuple allocation overhead and uses safe `for...in` with `Object.hasOwn`.
+- Removed generated `.jules/*` artifacts from merged PR changes.
+
 ## [0.1.1] - 2026-03-02
 
 ### Added

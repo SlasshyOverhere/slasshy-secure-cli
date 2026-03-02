@@ -6,16 +6,15 @@
 
 Client-side, zero-knowledge vault for passwords, notes, TOTP secrets, and encrypted files synced to Google Drive.
 
-Current release: `0.1.1`
+Current release: `0.1.2`
 Release notes: see `CHANGELOG.md`
 
-## What's New In 0.1.1
+## What's New In 0.1.2
 
-- Launched the official BlankDrive Desktop app (Tauri) for a faster, simpler, and more stable local experience.
-- Added CLI desktop installer command: `BLANK desktop` and one-step install: `BLANK desktop --install`.
-- Added CLI update command: `BLANK update --check` and `BLANK update --install`.
-- Added scheduled update checks every 24 hours for CLI and desktop launcher prompt flow.
-- Added release automation to publish Windows desktop installers to GitHub Releases.
+- Fixed desktop installer runtime startup by bundling backend runtime files inside Tauri resources.
+- Added missing auth guard on `/api/cli/run` in Web UI (`ensureUnlocked()`), closing local unauthenticated CLI execution risk.
+- Optimized vault entry iteration path for large vaults with lower allocation overhead.
+- Kept desktop install/update flows via CLI: `BLANK desktop --install`, `BLANK update --check`, `BLANK update --install`.
 
 ## CLI Use Case Demo
 
