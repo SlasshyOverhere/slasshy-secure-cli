@@ -1,0 +1,3 @@
+## 2024-03-02 - Avoid Object.entries() on large dictionaries
+**Learning:** In scenarios where the application must iterate over a very large dictionary (like iterating all vault index entries for search/listing), using `Object.entries(dict)` creates a massive intermediate array of `[key, value]` tuples. This intermediate allocation adds substantial overhead (~5x slower iteration setup) compared to iterating via a standard `for...in` loop.
+**Action:** Always favor `for...in` combined with value lookup (`const value = dict[key]`) over `Object.entries()` when performing full iteration over large or potentially large map-like objects (e.g., `vaultIndex.entries`).
