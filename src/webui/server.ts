@@ -1169,6 +1169,8 @@ async function handleApiRequest(
       return;
     }
 
+    ensureUnlocked();
+
     const body = await readJsonBody(req);
     const command = readString(body, 'command', {
       required: true,
