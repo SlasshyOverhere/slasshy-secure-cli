@@ -23,6 +23,9 @@ import {
   generateCommand,
   settingsCommand,
   webCommand,
+  desktopCommand,
+  updateCommand,
+  runScheduledUpdateCheckPrompt,
 } from './cli/commands/index.js';
 import { startShell } from './cli/shell.js';
 
@@ -35,25 +38,25 @@ const program = new Command();
 
 // ASCII art banner
 const banner = `
-  ██████╗ ██╗      █████╗ ███╗   ██╗██╗  ██╗
-  ██╔══██╗██║     ██╔══██╗████╗  ██║██║ ██╔╝
-  ██████╔╝██║     ███████║██╔██╗ ██║█████╔╝
-  ██╔══██╗██║     ██╔══██║██║╚██╗██║██╔═██╗
-  ██████╔╝███████╗██║  ██║██║ ╚████║██║  ██╗
-  ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝
-     ██████╗ ██████╗ ██╗██╗   ██╗███████╗
-     ██╔══██╗██╔══██╗██║██║   ██║██╔════╝
-     ██║  ██║██████╔╝██║██║   ██║█████╗
-     ██║  ██║██╔══██╗██║╚██╗ ██╔╝██╔══╝
-     ██████╔╝██║  ██║██║ ╚████╔╝ ███████╗
-     ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝  ╚══════╝
+   ____  _             _    ____       _
+  | __ )| | __ _ _ __ | | _|  _ \\ _ __(_)_   _____
+  |  _ \\| |/ _\` | '_ \\| |/ / | | | '__| \\ \\ / / _ \\
+  | |_) | | (_| | | | |   <| |_| | |  | |\\ V /  __/
+  |____/|_|\\__,_|_| |_|_|\\_\\____/|_|  |_| \\_/ \\___|
+            Secure Vault Console
+`;
+
+const desktopCallout = `
+${chalk.bgCyan.black(' DESKTOP RELEASE LIVE ')} ${chalk.white('Install from CLI:')} ${chalk.cyan('BLANK desktop --install')}
+${chalk.gray('Download only:')} ${chalk.cyan('BLANK desktop')} ${chalk.gray('| Check updates:')} ${chalk.cyan('BLANK update --check')}
 `;
 
 program
   .name('BLANK')
   .description('Military-grade secure storage with steganography & Google Drive sync')
   .version(VERSION, '-v, --version', 'Show version number')
-  .addHelpText('before', chalk.cyan(banner));
+  .addHelpText('before', chalk.cyan(banner))
+  .addHelpText('after', desktopCallout);
 
 // Init command
 program
@@ -195,6 +198,58 @@ program
     await webCommand(options);
   });
 
+// Desktop installer command
+program
+  .command('desktop')
+  .description('Download BlankDrive desktop installer (.exe) from GitHub releases')
+  .option('-r, --release <tag>', 'Release tag (default: latest)')
+  .option('--version <tag>', 'Alias for --release')
+  .option('-o, --output <path>', 'Output file path or destination directory')
+  .option('-a, --asset <name>', 'Select a specific .exe asset name')
+  .option('-f, --force', 'Overwrite existing output file')
+  .option('-i, --install', 'Launch installer automatically after download')
+  .option('-y, --yes', 'Non-interactive mode')
+  .action(async (options) => {
+    await desktopCommand({
+      release: options.release || options.version,
+      output: options.output,
+      asset: options.asset,
+      force: options.force,
+      install: options.install,
+      nonInteractive: options.yes,
+    });
+  });
+
+// Update command
+program
+  .command('update')
+  .description('Check/download/install desktop updates')
+  .option('-c, --check', 'Check for updates only')
+  .option('-i, --install', 'Download and launch installer')
+  .option('-r, --release <tag>', 'Specific release tag')
+  .option('--version <tag>', 'Alias for --release')
+  .option('-a, --asset <name>', 'Specific .exe asset')
+  .option('-o, --output <path>', 'Output file path or destination directory')
+  .option('-f, --force', 'Overwrite existing output file')
+  .option('-y, --yes', 'Non-interactive mode')
+  .option('--current-version <version>', 'Override current version used for update checks')
+  .option('--json', 'Print machine-readable JSON')
+  .option('--scheduled', 'Respect 24-hour update check interval')
+  .action(async (options) => {
+    await updateCommand({
+      check: options.check,
+      install: options.install,
+      release: options.release || options.version,
+      currentVersion: options.currentVersion,
+      asset: options.asset,
+      output: options.output,
+      force: options.force,
+      yes: options.yes,
+      json: options.json,
+      scheduled: options.scheduled,
+    });
+  });
+
 // Lock command
 program
   .command('lock')
@@ -251,10 +306,39 @@ program
     console.log(chalk.cyan(`\n  BlankDrive v${VERSION}\n`));
   });
 
-// Check for interactive shell mode (no arguments)
-if (!process.argv.slice(2).length) {
-  startShell();
-} else {
+function shouldSkipAutoUpdateCheck(cmd: string | undefined): boolean {
+  if (!cmd) {
+    return false;
+  }
+
+  const normalized = cmd.toLowerCase();
+  return [
+    'update',
+    'desktop',
+    'version',
+    '-v',
+    '--version',
+    'help',
+    '--help',
+    '-h',
+  ].includes(normalized);
+}
+
+async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+
+  if (!args.length) {
+    await runScheduledUpdateCheckPrompt().catch(() => {});
+    await startShell();
+    return;
+  }
+
+  if (!shouldSkipAutoUpdateCheck(args[0])) {
+    await runScheduledUpdateCheckPrompt().catch(() => {});
+  }
+
   // Parse arguments for CLI mode
   program.parse();
 }
+
+void main();

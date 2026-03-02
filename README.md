@@ -6,14 +6,16 @@
 
 Client-side, zero-knowledge vault for passwords, notes, TOTP secrets, and encrypted files synced to Google Drive.
 
-Current release: `0.0.3`
+Current release: `0.1.1`
 Release notes: see `CHANGELOG.md`
 
-## What's New In 0.0.3
+## What's New In 0.1.1
 
-- Added a local Web UI via `BLANK web` / `BLANK ui` with vault unlock/init, entry CRUD, file upload/download, and in-browser CLI execution.
-- Added improved shell help with interactive command picker plus `help --list`.
-- Fixed cloud file operations to auto-authenticate Drive sessions before sync/upload/download actions.
+- Launched the official BlankDrive Desktop app (Tauri) for a faster, simpler, and more stable local experience.
+- Added CLI desktop installer command: `BLANK desktop` and one-step install: `BLANK desktop --install`.
+- Added CLI update command: `BLANK update --check` and `BLANK update --install`.
+- Added scheduled update checks every 24 hours for CLI and desktop launcher prompt flow.
+- Added release automation to publish Windows desktop installers to GitHub Releases.
 
 ## CLI Use Case Demo
 
@@ -52,6 +54,12 @@ BlankDrive is fully client-side:
 
 ```bash
 npm install -g blankdrive
+```
+
+Desktop installer (Windows) is now available directly from CLI:
+
+```bash
+BLANK desktop --install
 ```
 
 Or from source:
@@ -230,6 +238,8 @@ BLANK auth [--setup|--logout]
 BLANK generate [options]
 BLANK status
 BLANK web [--port <number>] [--open]
+BLANK desktop [--release <tag>] [--install]
+BLANK update [--check|--install|--scheduled]
 BLANK lock
 BLANK destruct
 BLANK version
@@ -254,6 +264,11 @@ Shell includes additional commands like:
 - `history`
 - `auditlog`
 
+Desktop and update are also available in shell mode:
+
+- `desktop --install`
+- `update --check`
+
 ## Web UI (Local)
 
 BlankDrive now includes a local web console for vault management (including password/note CRUD and file upload/download):
@@ -269,6 +284,23 @@ Useful options:
 
 The web UI runs locally and does not use any remote backend.
 It only accepts requests via `localhost` (for example `http://localhost:4310`).
+
+## Desktop App (Tauri)
+
+BlankDrive Desktop is now officially launched for users who want a smoother and more stable local app experience while keeping the same backend logic as CLI/Web.
+
+- Same Node runtime/backend as CLI (`BLANK web` sidecar under the hood)
+- No separate desktop backend
+- Same vault, same data, same commands
+- Faster boot and lighter footprint than Electron-based approach
+
+Install/update directly from CLI:
+
+```bash
+BLANK desktop --install
+BLANK update --check
+BLANK update --install
+```
 
 ## Restore Flow
 

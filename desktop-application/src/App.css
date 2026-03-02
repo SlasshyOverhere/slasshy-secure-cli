@@ -1,0 +1,229 @@
+:root {
+  --font-display: "Sora", "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", "Consolas", monospace;
+  --ink-strong: #f4f7ff;
+  --ink-muted: #b9c7e8;
+  --base-1: #080f1f;
+  --base-2: #121f3e;
+  --base-3: #1d305c;
+  --line: #32476d;
+  --line-soft: #2a3d63;
+  --accent: #3ca0ff;
+  --accent-2: #34d399;
+  --danger: #f87171;
+  --card-shadow: 0 24px 55px rgba(2, 8, 23, 0.45);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  color: var(--ink-strong);
+  font-family: var(--font-display);
+  background:
+    radial-gradient(1200px 600px at 12% -10%, rgba(60, 160, 255, 0.25), transparent 65%),
+    radial-gradient(1000px 520px at 90% 0%, rgba(52, 211, 153, 0.16), transparent 62%),
+    linear-gradient(170deg, var(--base-1) 0%, var(--base-2) 56%, #17264a 100%);
+}
+
+.launcher {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.panel {
+  width: min(760px, 100%);
+  padding: 30px;
+  border: 1px solid var(--line-soft);
+  border-radius: 20px;
+  background:
+    linear-gradient(145deg, rgba(11, 18, 34, 0.94), rgba(23, 37, 70, 0.9)),
+    linear-gradient(180deg, rgba(60, 160, 255, 0.08), transparent 40%);
+  box-shadow: var(--card-shadow);
+  backdrop-filter: blur(4px);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 0 14px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  border: 1px solid transparent;
+}
+
+.badge-starting {
+  color: #fcd34d;
+  border-color: rgba(252, 211, 77, 0.42);
+  background: rgba(252, 211, 77, 0.12);
+}
+
+.badge-ready {
+  color: var(--accent-2);
+  border-color: rgba(52, 211, 153, 0.42);
+  background: rgba(52, 211, 153, 0.12);
+}
+
+.badge-failed {
+  color: var(--danger);
+  border-color: rgba(248, 113, 113, 0.42);
+  background: rgba(248, 113, 113, 0.12);
+}
+
+h1 {
+  margin: 0 0 4px;
+  font-size: clamp(1.5rem, 2.5vw, 2rem);
+  letter-spacing: 0.01em;
+}
+
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+
+.brand-logo {
+  width: 72px;
+  height: 56px;
+  object-fit: cover;
+  object-position: center;
+  border-radius: 12px;
+  border: 1px solid #43639b;
+  background: #081220;
+}
+
+.brand-subtitle {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+}
+
+.status {
+  margin: 0;
+  color: var(--ink-strong);
+  font-size: 1rem;
+}
+
+.details {
+  margin-top: 16px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(4, 11, 24, 0.75);
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.actions {
+  margin-top: 18px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+button {
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #eaf1ff;
+  border-radius: 11px;
+  border: 1px solid #4275bf;
+  padding: 10px 16px;
+  background: linear-gradient(180deg, #3c7cce 0%, #2f63ad 100%);
+  cursor: pointer;
+  transition: filter 0.2s ease, transform 0.2s ease;
+}
+
+button:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.button-secondary {
+  background: rgba(9, 19, 37, 0.7);
+  border-color: #4e5f7d;
+}
+
+.button-secondary:hover:not(:disabled) {
+  filter: brightness(1.04);
+}
+
+.update-panel {
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(8, 15, 31, 0.72);
+}
+
+.update-panel h2 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.update-panel p {
+  margin: 0 0 6px;
+  color: var(--ink-muted);
+  font-size: 0.86rem;
+}
+
+.update-panel strong {
+  color: var(--ink-strong);
+}
+
+.update-message {
+  color: #d8e6ff;
+}
+
+.hint {
+  margin: 18px 0 0;
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.hint code {
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  color: #d8e6ff;
+}
+
+@media (max-width: 680px) {
+  .launcher {
+    padding: 14px;
+  }
+
+  .panel {
+    padding: 20px;
+    border-radius: 16px;
+  }
+
+  .status {
+    font-size: 0.92rem;
+  }
+}

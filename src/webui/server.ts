@@ -48,6 +48,11 @@ const MAX_UPLOAD_SESSION_AGE_MS = 60 * 60 * 1000;
 const CLI_RUN_TIMEOUT_MS = 120_000;
 const CLI_RUN_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
 const BLOCKED_WEB_CLI_COMMANDS = new Set(['web', 'ui']);
+const BRAND_LOGO_CANDIDATES = [
+  path.join(process.cwd(), 'assets', 'blankdrive-logo.png'),
+  path.join(process.cwd(), 'desktop-application', 'src-tauri', 'icons', 'blankdrive.png'),
+  path.join(process.cwd(), 'desktop-application', 'src-tauri', 'icons', 'icon.png'),
+];
 
 const execFileAsync = promisify(execFile);
 
@@ -78,6 +83,7 @@ interface CliRunResult {
 }
 
 const uploadSessions = new Map<string, UploadSession>();
+let brandLogoBufferCache: Buffer | null = null;
 
 class HttpError extends Error {
   public readonly statusCode: number;
@@ -118,7 +124,7 @@ function sendHtml(res: ServerResponse, html: string, nonce: string): void {
   res.writeHead(200, {
     'content-type': 'text/html; charset=utf-8',
     'cache-control': 'no-store',
-    'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';`,
+    'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';`,
   });
   res.end(html);
 }
@@ -610,6 +616,147 @@ function parseFileDownloadRoute(pathname: string): { id: string } | null {
   return { id };
 }
 
+function parseFileStreamRoute(pathname: string): { id: string } | null {
+  const parts = pathname.split('/').filter(Boolean);
+  if (parts.length !== 4 || parts[0] !== 'api' || parts[1] !== 'files' || parts[3] !== 'stream') {
+    return null;
+  }
+
+  const rawId = parts[2];
+  if (!rawId) {
+    return null;
+  }
+
+  let id: string;
+  try {
+    id = decodeURIComponent(rawId);
+  } catch {
+    throw new HttpError(400, 'Invalid entry id.');
+  }
+
+  return { id };
+}
+
+async function resolveFileDataFromVaultOrCloud(
+  id: string,
+): Promise<{ fileEntry: NonNullable<Awaited<ReturnType<typeof getFileEntry>>>; fileData: Buffer }> {
+  if (getEntryType(id) !== 'file') {
+    throw new HttpError(404, 'File entry not found.');
+  }
+
+  const fileEntry = await getFileEntry(id);
+  if (!fileEntry) {
+    throw new HttpError(404, 'File entry not found.');
+  }
+
+  let fileData: Buffer | null;
+  try {
+    fileData = await getFileData(id);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Failed to read encrypted file data.';
+    const lowerMessage = errorMessage.toLowerCase();
+    const indexEntry = getVaultIndex()?.entries[id];
+    const cloudChunks = (indexEntry?.cloudChunks as CloudFileChunk[] | undefined) ?? [];
+    const shouldAttemptCloudDownload = cloudChunks.length > 0
+      && (lowerMessage.includes('not found')
+        || lowerMessage.includes('missing chunk')
+        || lowerMessage.includes('deleted')
+        || lowerMessage.includes('corrupted'));
+
+    if (!shouldAttemptCloudDownload) {
+      throw new HttpError(409, errorMessage);
+    }
+
+    try {
+      const cloudAvailable = await isCloudSyncAvailable();
+      if (!cloudAvailable) {
+        throw new HttpError(409, 'Local file data is missing and cloud sync is not available.');
+      }
+
+      await downloadFileFromCloud(id, cloudChunks);
+    } catch (cloudError) {
+      if (cloudError instanceof HttpError) {
+        throw cloudError;
+      }
+      if (cloudError instanceof Error) {
+        throw new HttpError(409, cloudError.message);
+      }
+      throw cloudError;
+    }
+
+    try {
+      fileData = await getFileData(id);
+    } catch (retryError) {
+      if (retryError instanceof Error) {
+        throw new HttpError(409, retryError.message);
+      }
+      throw retryError;
+    }
+  }
+
+  if (!fileData) {
+    throw new HttpError(404, 'Encrypted file data not found.');
+  }
+
+  return { fileEntry, fileData };
+}
+
+function parseByteRange(
+  rangeHeader: string | undefined,
+  totalSize: number,
+): { start: number; end: number } | null {
+  if (!rangeHeader) {
+    return null;
+  }
+
+  const match = rangeHeader.match(/^bytes=(\d*)-(\d*)$/i);
+  if (!match) {
+    throw new HttpError(416, 'Invalid Range header.');
+  }
+
+  if (totalSize <= 0) {
+    throw new HttpError(416, 'Invalid range for empty file.');
+  }
+
+  const startRaw = match[1];
+  const endRaw = match[2];
+  if (!startRaw && !endRaw) {
+    throw new HttpError(416, 'Invalid Range header.');
+  }
+
+  let start: number;
+  let end: number;
+
+  if (!startRaw) {
+    const suffixLength = Number.parseInt(endRaw!, 10);
+    if (Number.isNaN(suffixLength) || suffixLength <= 0) {
+      throw new HttpError(416, 'Invalid suffix range.');
+    }
+    const effectiveLength = Math.min(suffixLength, totalSize);
+    start = totalSize - effectiveLength;
+    end = totalSize - 1;
+  } else {
+    start = Number.parseInt(startRaw, 10);
+    if (Number.isNaN(start) || start < 0 || start >= totalSize) {
+      throw new HttpError(416, 'Range start is out of bounds.');
+    }
+
+    if (!endRaw) {
+      end = totalSize - 1;
+    } else {
+      end = Number.parseInt(endRaw, 10);
+      if (Number.isNaN(end) || end < start) {
+        throw new HttpError(416, 'Range end is invalid.');
+      }
+      if (end >= totalSize) {
+        end = totalSize - 1;
+      }
+    }
+  }
+
+  return { start, end };
+}
+
 async function handleApiRequest(
   req: IncomingMessage,
   res: ServerResponse,
@@ -620,6 +767,28 @@ async function handleApiRequest(
 
   if (isWriteMethod(method)) {
     requireUiWriteGuard(req);
+  }
+
+  if (pathname === '/api/brand/logo') {
+    if (method !== 'GET') {
+      sendMethodNotAllowed(res);
+      return;
+    }
+
+    const logoBuffer = await readBrandLogoBuffer();
+    if (!logoBuffer) {
+      sendJson(res, 404, { error: 'Brand logo is not available.' });
+      return;
+    }
+
+    setSecurityHeaders(res);
+    res.writeHead(200, {
+      'content-type': 'image/png',
+      'content-length': String(logoBuffer.byteLength),
+      'cache-control': 'public, max-age=3600',
+    });
+    res.end(logoBuffer);
+    return;
   }
 
   if (pathname === '/api/status') {
@@ -1022,72 +1191,54 @@ async function handleApiRequest(
 
     ensureUnlocked();
     const { id } = fileDownloadRoute;
-    if (getEntryType(id) !== 'file') {
-      sendJson(res, 404, { error: 'File entry not found.' });
-      return;
-    }
-
-    const fileEntry = await getFileEntry(id);
-    if (!fileEntry) {
-      sendJson(res, 404, { error: 'File entry not found.' });
-      return;
-    }
-
-    let fileData: Buffer | null;
-    try {
-      fileData = await getFileData(id);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to read encrypted file data.';
-      const lowerMessage = errorMessage.toLowerCase();
-      const indexEntry = getVaultIndex()?.entries[id];
-      const cloudChunks = (indexEntry?.cloudChunks as CloudFileChunk[] | undefined) ?? [];
-      const shouldAttemptCloudDownload = cloudChunks.length > 0
-        && (lowerMessage.includes('not found')
-          || lowerMessage.includes('missing chunk')
-          || lowerMessage.includes('deleted')
-          || lowerMessage.includes('corrupted'));
-
-      if (!shouldAttemptCloudDownload) {
-        throw new HttpError(409, errorMessage);
-      }
-
-      try {
-        const cloudAvailable = await isCloudSyncAvailable();
-        if (!cloudAvailable) {
-          throw new HttpError(409, 'Local file data is missing and cloud sync is not available.');
-        }
-
-        await downloadFileFromCloud(id, cloudChunks);
-      } catch (cloudError) {
-        if (cloudError instanceof HttpError) {
-          throw cloudError;
-        }
-        if (cloudError instanceof Error) {
-          throw new HttpError(409, cloudError.message);
-        }
-        throw cloudError;
-      }
-
-      try {
-        fileData = await getFileData(id);
-      } catch (retryError) {
-        if (retryError instanceof Error) {
-          throw new HttpError(409, retryError.message);
-        }
-        throw retryError;
-      }
-    }
-
-    if (!fileData) {
-      sendJson(res, 404, { error: 'Encrypted file data not found.' });
-      return;
-    }
+    const { fileEntry, fileData } = await resolveFileDataFromVaultOrCloud(id);
 
     const downloadName = normalizeDownloadFileName(fileEntry.originalName);
     res.writeHead(200, {
       'content-type': fileEntry.mimeType || 'application/octet-stream',
       'content-length': String(fileData.byteLength),
       'content-disposition': `attachment; filename="${downloadName}"`,
+      'cache-control': 'no-store',
+    });
+    res.end(fileData);
+    return;
+  }
+
+  const fileStreamRoute = parseFileStreamRoute(pathname);
+  if (fileStreamRoute) {
+    if (method !== 'GET') {
+      sendMethodNotAllowed(res);
+      return;
+    }
+
+    ensureUnlocked();
+    const { id } = fileStreamRoute;
+    const { fileEntry, fileData } = await resolveFileDataFromVaultOrCloud(id);
+    const totalSize = fileData.byteLength;
+    const downloadName = normalizeDownloadFileName(fileEntry.originalName);
+    const rangeHeader = headerValue(req.headers.range);
+    const range = parseByteRange(rangeHeader, totalSize);
+
+    if (range) {
+      const { start, end } = range;
+      const chunk = fileData.subarray(start, end + 1);
+      res.writeHead(206, {
+        'content-type': fileEntry.mimeType || 'application/octet-stream',
+        'content-length': String(chunk.byteLength),
+        'content-range': `bytes ${start}-${end}/${totalSize}`,
+        'accept-ranges': 'bytes',
+        'content-disposition': `inline; filename="${downloadName}"`,
+        'cache-control': 'no-store',
+      });
+      res.end(chunk);
+      return;
+    }
+
+    res.writeHead(200, {
+      'content-type': fileEntry.mimeType || 'application/octet-stream',
+      'content-length': String(totalSize),
+      'accept-ranges': 'bytes',
+      'content-disposition': `inline; filename="${downloadName}"`,
       'cache-control': 'no-store',
     });
     res.end(fileData);
@@ -1280,8 +1431,20 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
     }
 
     if (requestUrl.pathname === '/favicon.ico') {
-      res.writeHead(204);
-      res.end();
+      const logoBuffer = await readBrandLogoBuffer();
+      if (!logoBuffer) {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
+      setSecurityHeaders(res);
+      res.writeHead(200, {
+        'content-type': 'image/png',
+        'content-length': String(logoBuffer.byteLength),
+        'cache-control': 'public, max-age=3600',
+      });
+      res.end(logoBuffer);
       return;
     }
 
@@ -1318,6 +1481,26 @@ function closeServer(server: Server): Promise<void> {
       resolve();
     });
   });
+}
+
+async function readBrandLogoBuffer(): Promise<Buffer | null> {
+  if (brandLogoBufferCache) {
+    return brandLogoBufferCache;
+  }
+
+  for (const candidate of BRAND_LOGO_CANDIDATES) {
+    try {
+      const buffer = await fs.readFile(candidate);
+      if (buffer.byteLength > 0) {
+        brandLogoBufferCache = buffer;
+        return buffer;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
 }
 
 export async function startWebUiServer(options: WebUiServerOptions = {}): Promise<WebUiServerHandle> {

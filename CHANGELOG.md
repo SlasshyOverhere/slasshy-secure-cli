@@ -2,31 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased] - 2026-03-02
+## [Unreleased]
 
-### Integration Follow-up
+- No unreleased entries yet.
 
-This entry documents the post-review integration that landed on `main` in commit `d5f8b6c`.
+## [0.1.1] - 2026-03-02
 
-#### Integrated PR work (inspected, overlap-resolved, merged via integration commit)
+### Added
 
-- `#9` Security: preserved sanitized 500 responses and added regression coverage in `tests/server_error_leak.test.ts`.
-- `#10` UI/A11y: merged copy-password action and accessibility improvements in Web UI forms/controls.
-- `#11` Security headers: merged CSP + nonce model and security headers in Web UI server/template.
-- `#12` Drive sync performance: merged lower-latency upload/download path improvements.
-- `#14` Vault controls UX: merged vault control visibility/focus and responsive control layout improvements.
-- `#18` PNG stego performance: merged direct bitwise encode/decode optimization and added an extra fix for empty-payload extraction.
-- `#19` Accessibility pass: merged broad ARIA label coverage for Web UI form fields.
+- Official Tauri desktop app under `desktop-application/` that launches the shared Node backend.
+- CLI desktop installer command (`BLANK desktop`) with direct `.exe` download from latest GitHub release.
+- CLI update command (`BLANK update`) with check/install flows and machine-readable JSON mode.
+- 24-hour scheduled update checks with prompt-to-install flow in CLI and desktop launcher.
+- Desktop release build/upload job in `publish.yml` for Windows installers (`.exe` / `.msi`).
+- Desktop logo and icon set integration across web UI and desktop packaging.
 
-#### Rejected PRs
+### Improved
 
-- Rejected as duplicate/superseded/noisy (`#7`, `#8`, `#13`, `#15`, `#16`, `#17`).
+- CLI help/shell startup now highlights desktop install/update commands prominently.
+- Desktop launcher UI now includes update prompt actions (`Download & Install` / continue).
 
-#### Validation performed before integration
+### Fixed
 
-- `npm test` (378 passing)
-- `npm run build`
-- `npm run lint`
+- Desktop update checks now compare against desktop app version when running in Tauri.
+- Update schedule cache now records check attempts even on API/asset lookup failures.
 
 ## [0.0.3] - 2026-02-24
 

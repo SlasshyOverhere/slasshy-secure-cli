@@ -18,3 +18,5 @@ export { totpCommand } from './totp.js';
 export { syncCommand, showSyncHelp } from './sync.js';
 export { settingsCommand } from './settings.js';
 export { webCommand } from './web.js';
+export { desktopCommand } from './desktop.js';
+export { updateCommand, runScheduledUpdateCheckPrompt } from './update.js';
