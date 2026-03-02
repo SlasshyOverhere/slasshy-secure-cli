@@ -1,4 +1,0 @@
-## 2024-05-24 - Missing Authentication Check on CLI Command Execution Endpoint
-**Vulnerability:** The `/api/cli/run` endpoint in `src/webui/server.ts` lacked a check to ensure the vault was unlocked (`ensureUnlocked()`) before running arbitrary CLI commands via `execFileAsync`. This allowed unauthenticated execution of CLI commands if the Web UI server was running and accessible.
-**Learning:** Even though the Web UI is restricted to loopback (localhost), all sensitive API endpoints must verify the vault is unlocked to prevent local unauthenticated access or CSRF-like attacks from within the local environment from executing arbitrary CLI commands.
-**Prevention:** Always ensure that `ensureUnlocked()` is called on every endpoint that performs sensitive actions, modifies data, or executes commands.
