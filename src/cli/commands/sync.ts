@@ -345,7 +345,10 @@ async function performSync(force?: boolean): Promise<void> {
       displaySyncSummary(resolutions);
     } else {
       // No conflicts, just update sync state
-      for (const [id, { entry }] of Object.entries(localEntries)) {
+      // OPTIMIZATION: Use for...in loop instead of Object.entries to avoid massive array allocation overhead
+      for (const id in localEntries) {
+        if (!Object.hasOwn(localEntries, id)) continue;
+        const { entry } = localEntries[id]!;
         syncState.entryVersions[id] = {
           localVersion: (syncState.entryVersions[id]?.localVersion || 0) + 1,
           remoteVersion: (syncState.entryVersions[id]?.remoteVersion || 0) + 1,
