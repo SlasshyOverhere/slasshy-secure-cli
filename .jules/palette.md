@@ -1,0 +1,3 @@
+## 2023-11-20 - Adding Keyboard Focus States to Interactive UI Elements
+**Learning:** In Single Page Applications where CSS frameworks are not used, native elements like `<button>` might lack explicit `:focus-visible` styling, hindering keyboard accessibility. Resetting the native outline on `button:focus` and implementing a custom `box-shadow` on `button:focus-visible` matching the established input styles improves navigation without affecting mouse-click aesthetics.
+**Action:** When adding or modifying interactive elements (such as UI buttons), explicitly define `:focus-visible` styling rather than relying on browser defaults to ensure uniform keyboard navigability.

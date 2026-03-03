@@ -319,10 +319,15 @@ textarea::placeholder {
 
 input:focus,
 textarea:focus,
-select:focus {
+select:focus,
+button:focus-visible {
   outline: none;
   border-color: #555;
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+button:focus {
+  outline: none;
 }
 
 button {
