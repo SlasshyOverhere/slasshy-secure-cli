@@ -157,14 +157,16 @@ export async function deleteEntryFromDrive(driveFileIds: string[]): Promise<void
     throw new Error('Drive not connected');
   }
 
-  for (const fileId of driveFileIds) {
-    try {
-      await deleteFile(fileId);
-    } catch (error) {
-      // Log but continue with other deletions
-      console.error(`Failed to delete file ${fileId}:`, error);
-    }
-  }
+  await Promise.allSettled(
+    driveFileIds.map(async (fileId) => {
+      try {
+        await deleteFile(fileId);
+      } catch (error) {
+        // Log but continue with other deletions
+        console.error(`Failed to delete file ${fileId}:`, error);
+      }
+    })
+  );
 }
 
 /**

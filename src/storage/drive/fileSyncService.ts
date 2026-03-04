@@ -231,7 +231,7 @@ export async function deleteFileFromCloud(
   await ensureDriveAuthenticated();
   const errors: string[] = [];
 
-  for (const chunk of cloudChunks) {
+  const deleteTasks = cloudChunks.map(chunk => async () => {
     try {
       await deleteFromAppData(chunk.driveFileId);
     } catch (error) {
@@ -240,12 +240,14 @@ export async function deleteFileFromCloud(
         const message = error.message.toLowerCase();
         if (message.includes('not found') || message.includes('404')) {
           // File already deleted, ignore
-          continue;
+          return;
         }
         errors.push(`Chunk ${chunk.chunkIndex}: ${error.message}`);
       }
     }
-  }
+  });
+
+  await runParallel(deleteTasks, PARALLEL_LIMIT);
 
   if (errors.length > 0) {
     throw new Error(`Failed to delete some chunks from cloud: ${errors.join(', ')}`);
