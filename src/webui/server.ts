@@ -99,6 +99,13 @@ export interface WebUiServerOptions {
   port?: number;
 }
 
+const UNLOCK_MAX_ATTEMPTS = 5;
+const UNLOCK_LOCKOUT_MS = 60 * 1000;
+const unlockRateLimiter = {
+  attempts: 0,
+  lockedUntil: 0
+};
+
 export interface WebUiServerHandle {
   url: string;
   close: () => Promise<void>;
@@ -842,19 +849,50 @@ async function handleApiRequest(
       return;
     }
 
-    const body = await readJsonBody(req);
-    const password = readString(body, 'password', {
-      required: true,
-      maxLength: 4096,
-      trim: false,
-      allowEmpty: false,
-    });
-
-    if (!await vaultExists()) {
-      throw new HttpError(404, 'Vault not initialized.');
+    const nowTime = Date.now();
+    if (nowTime < unlockRateLimiter.lockedUntil) {
+      const waitSecs = Math.ceil((unlockRateLimiter.lockedUntil - nowTime) / 1000);
+      throw new HttpError(429, `Too many unlock attempts. Please try again in ${waitSecs} seconds.`);
     }
 
-    await unlock(password!);
+    if (unlockRateLimiter.attempts >= UNLOCK_MAX_ATTEMPTS) {
+      unlockRateLimiter.lockedUntil = Date.now() + UNLOCK_LOCKOUT_MS;
+      throw new HttpError(429, `Too many unlock attempts. Please try again in 60 seconds.`);
+    }
+
+    // Increment attempts early to prevent concurrent brute force
+    unlockRateLimiter.attempts++;
+
+    let password = '';
+    try {
+      const body = await readJsonBody(req);
+      password = readString(body, 'password', {
+        required: true,
+        maxLength: 4096,
+        trim: false,
+        allowEmpty: false,
+      })!;
+
+      if (!await vaultExists()) {
+        unlockRateLimiter.attempts = Math.max(0, unlockRateLimiter.attempts - 1);
+        throw new HttpError(404, 'Vault not initialized.');
+      }
+
+      await unlock(password!);
+      // Reset rate limiter on successful unlock
+      unlockRateLimiter.attempts = 0;
+      unlockRateLimiter.lockedUntil = 0;
+    } catch (error) {
+      if (unlockRateLimiter.attempts >= UNLOCK_MAX_ATTEMPTS) {
+        unlockRateLimiter.lockedUntil = Date.now() + UNLOCK_LOCKOUT_MS;
+      }
+
+      if (error instanceof Error && error.message.includes('Decryption failed')) {
+        throw new HttpError(401, 'Invalid password.');
+      }
+      throw error;
+    }
+
     sendJson(res, 200, {
       unlocked: true,
       stats: getStats(),
