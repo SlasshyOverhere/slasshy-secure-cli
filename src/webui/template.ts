@@ -342,6 +342,12 @@ button:disabled {
   cursor: not-allowed;
 }
 
+button:focus-visible {
+  outline: none;
+  border-color: #555;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
 .btn-primary {
   color: #0b0b0b;
   background: linear-gradient(180deg, #efefef 0%, #bcbcbc 100%);
