@@ -223,6 +223,7 @@ export async function downloadFileFromCloud(
 
 /**
  * Delete all cloud chunks for a file entry
+ * Uses parallel deletions to avoid sequential network delays
  */
 export async function deleteFileFromCloud(
   entryId: string,
@@ -231,21 +232,26 @@ export async function deleteFileFromCloud(
   await ensureDriveAuthenticated();
   const errors: string[] = [];
 
-  for (const chunk of cloudChunks) {
-    try {
-      await deleteFromAppData(chunk.driveFileId);
-    } catch (error) {
-      // Only ignore 404 "file not found" errors (already deleted)
-      if (error instanceof Error) {
-        const message = error.message.toLowerCase();
-        if (message.includes('not found') || message.includes('404')) {
-          // File already deleted, ignore
-          continue;
+  const deleteTasks = cloudChunks.map((chunk) => {
+    return async (): Promise<void> => {
+      try {
+        await deleteFromAppData(chunk.driveFileId);
+      } catch (error) {
+        // Only ignore 404 "file not found" errors (already deleted)
+        if (error instanceof Error) {
+          const message = error.message.toLowerCase();
+          if (message.includes('not found') || message.includes('404')) {
+            // File already deleted, ignore
+            return;
+          }
+          errors.push(`Chunk ${chunk.chunkIndex}: ${error.message}`);
         }
-        errors.push(`Chunk ${chunk.chunkIndex}: ${error.message}`);
       }
-    }
-  }
+    };
+  });
+
+  // Run deletions in parallel
+  await runParallel(deleteTasks, PARALLEL_LIMIT);
 
   if (errors.length > 0) {
     throw new Error(`Failed to delete some chunks from cloud: ${errors.join(', ')}`);
