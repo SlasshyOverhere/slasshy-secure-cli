@@ -1,0 +1,3 @@
+## 2025-03-05 - Add :focus-visible styling to buttons
+**Learning:** Found an accessibility issue pattern where `button` elements and dynamically generated `.entry-item` buttons lacked explicit `:focus-visible` styles, resulting in a poor keyboard navigation experience. However, the application already established a consistent focus ring pattern on `input`, `textarea`, and `select` elements using a specific box-shadow and border color.
+**Action:** Applied the existing focus ring pattern to `button:focus-visible` and `.entry-item:focus-visible` to maintain visual consistency and improve accessibility for keyboard users. Always reuse existing focus ring tokens/styles when enhancing interactive elements.
