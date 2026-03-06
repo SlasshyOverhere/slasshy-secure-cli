@@ -28,6 +28,7 @@ import {
 } from '../../obfuscation/index.js';
 import { encryptObject, decryptObject, getEntryKey } from '../../crypto/index.js';
 import { randomInt } from '../../crypto/random.js';
+import { runParallel, PARALLEL_LIMIT } from './fileSyncService.js';
 
 const BLANKDRIVE_FOLDER_NAME = 'Photos'; // Innocuous folder name
 const DURESS_HASH_FILE = path.join(os.homedir(), '.slasshy', 'duress.hash');
@@ -157,14 +158,19 @@ export async function deleteEntryFromDrive(driveFileIds: string[]): Promise<void
     throw new Error('Drive not connected');
   }
 
-  for (const fileId of driveFileIds) {
-    try {
-      await deleteFile(fileId);
-    } catch (error) {
-      // Log but continue with other deletions
-      console.error(`Failed to delete file ${fileId}:`, error);
-    }
-  }
+  // Performance optimization: Delete chunks in parallel to avoid sequential network I/O bottleneck
+  const deleteTasks = driveFileIds.map((fileId) => {
+    return async (): Promise<void> => {
+      try {
+        await deleteFile(fileId);
+      } catch (error) {
+        // Log but continue with other deletions
+        console.error(`Failed to delete file ${fileId}:`, error);
+      }
+    };
+  });
+
+  await runParallel(deleteTasks, PARALLEL_LIMIT);
 }
 
 /**

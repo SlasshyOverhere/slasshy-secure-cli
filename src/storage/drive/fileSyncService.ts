@@ -23,7 +23,7 @@ import fsSync from 'fs';
 const TEMP_FILES_DIR = path.join(process.env.TEMP || os.tmpdir(), 'slasshy_temp');
 
 // Number of parallel uploads/downloads
-const PARALLEL_LIMIT = 5;
+export const PARALLEL_LIMIT = 5;
 
 /**
  * Initialize Drive client from persisted session when needed.
@@ -52,7 +52,7 @@ export interface CloudFileInfo {
 /**
  * Run tasks with limited parallelism
  */
-async function runParallel<T>(
+export async function runParallel<T>(
   tasks: (() => Promise<T>)[],
   limit: number,
   onTaskComplete?: (completed: number, total: number, result: T) => void
@@ -231,21 +231,26 @@ export async function deleteFileFromCloud(
   await ensureDriveAuthenticated();
   const errors: string[] = [];
 
-  for (const chunk of cloudChunks) {
-    try {
-      await deleteFromAppData(chunk.driveFileId);
-    } catch (error) {
-      // Only ignore 404 "file not found" errors (already deleted)
-      if (error instanceof Error) {
-        const message = error.message.toLowerCase();
-        if (message.includes('not found') || message.includes('404')) {
-          // File already deleted, ignore
-          continue;
+  // Performance optimization: Delete chunks in parallel to avoid sequential network I/O bottleneck
+  const deleteTasks = cloudChunks.map((chunk) => {
+    return async (): Promise<void> => {
+      try {
+        await deleteFromAppData(chunk.driveFileId);
+      } catch (error) {
+        // Only ignore 404 "file not found" errors (already deleted)
+        if (error instanceof Error) {
+          const message = error.message.toLowerCase();
+          if (message.includes('not found') || message.includes('404')) {
+            // File already deleted, ignore
+            return;
+          }
+          errors.push(`Chunk ${chunk.chunkIndex}: ${error.message}`);
         }
-        errors.push(`Chunk ${chunk.chunkIndex}: ${error.message}`);
       }
-    }
-  }
+    };
+  });
+
+  await runParallel(deleteTasks, PARALLEL_LIMIT);
 
   if (errors.length > 0) {
     throw new Error(`Failed to delete some chunks from cloud: ${errors.join(', ')}`);
