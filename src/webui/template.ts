@@ -325,6 +325,11 @@ select:focus {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
 button {
   font: inherit;
   font-size: 0.84rem;
