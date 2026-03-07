@@ -327,6 +327,7 @@ select:focus {
 
 button:focus-visible {
   outline: none;
+  border-color: #555;
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
@@ -424,6 +425,7 @@ button:disabled {
 }
 
 .entry-item.active:focus-visible {
+  border-color: #6d6d6d;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18) inset, 0 0 0 3px var(--accent-soft);
 }
 
