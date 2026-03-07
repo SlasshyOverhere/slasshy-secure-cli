@@ -94,6 +94,51 @@ class HttpError extends Error {
   }
 }
 
+class RateLimiter {
+  private attempts = new Map<string, { count: number; firstAttempt: number }>();
+
+  constructor(
+    private readonly maxAttempts: number,
+    private readonly windowMs: number
+  ) {}
+
+  public check(ip: string): void {
+    const now = Date.now();
+
+    // Clean up expired entries to prevent memory leaks
+    if (this.attempts.size > 1000) {
+      for (const [key, value] of this.attempts.entries()) {
+        if (now - value.firstAttempt > this.windowMs) {
+          this.attempts.delete(key);
+        }
+      }
+    }
+
+    const record = this.attempts.get(ip);
+
+    if (!record) {
+      this.attempts.set(ip, { count: 1, firstAttempt: now });
+      return;
+    }
+
+    if (now - record.firstAttempt > this.windowMs) {
+      this.attempts.set(ip, { count: 1, firstAttempt: now });
+      return;
+    }
+
+    record.count++;
+    if (record.count > this.maxAttempts) {
+      throw new HttpError(429, 'Too many attempts. Please try again later.');
+    }
+  }
+
+  public reset(ip: string): void {
+    this.attempts.delete(ip);
+  }
+}
+
+const unlockRateLimiter = new RateLimiter(5, 60 * 1000); // 5 attempts per minute
+
 export interface WebUiServerOptions {
   host?: string;
   port?: number;
@@ -815,6 +860,9 @@ async function handleApiRequest(
       return;
     }
 
+    const ip = req.socket.remoteAddress || 'unknown';
+    unlockRateLimiter.check(ip);
+
     const body = await readJsonBody(req);
     const password = readString(body, 'password', {
       required: true,
@@ -842,6 +890,9 @@ async function handleApiRequest(
       return;
     }
 
+    const ip = req.socket.remoteAddress || 'unknown';
+    unlockRateLimiter.check(ip);
+
     const body = await readJsonBody(req);
     const password = readString(body, 'password', {
       required: true,
@@ -854,11 +905,16 @@ async function handleApiRequest(
       throw new HttpError(404, 'Vault not initialized.');
     }
 
-    await unlock(password!);
-    sendJson(res, 200, {
-      unlocked: true,
-      stats: getStats(),
-    });
+    try {
+      await unlock(password!);
+      unlockRateLimiter.reset(ip);
+      sendJson(res, 200, {
+        unlocked: true,
+        stats: getStats(),
+      });
+    } catch {
+      throw new HttpError(401, 'Invalid password.');
+    }
     return;
   }
 
