@@ -94,6 +94,76 @@ class HttpError extends Error {
   }
 }
 
+const UNLOCK_RATE_LIMIT_MAX_ATTEMPTS = 5;
+const UNLOCK_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+
+class UnlockRateLimiter {
+  private readonly attempts = new Map<string, { count: number; firstAttempt: number }>();
+
+  constructor(
+    private readonly maxAttempts: number,
+    private readonly windowMs: number,
+  ) {}
+
+  public assertAllowed(clientKey: string): void {
+    const now = Date.now();
+
+    // Clean up expired entries to prevent memory leaks
+    if (this.attempts.size > 1000) {
+      for (const [attemptKey, value] of this.attempts.entries()) {
+        if (now - value.firstAttempt >= this.windowMs) {
+          this.attempts.delete(attemptKey);
+        }
+      }
+    }
+
+    const record = this.attempts.get(clientKey);
+    if (!record) {
+      return;
+    }
+    if (now - record.firstAttempt >= this.windowMs) {
+      this.attempts.delete(clientKey);
+      return;
+    }
+    if (record.count >= this.maxAttempts) {
+      throw new HttpError(429, 'Too many unlock attempts. Please try again later.');
+    }
+  }
+
+  public recordFailure(clientKey: string): void {
+    const now = Date.now();
+    const record = this.attempts.get(clientKey);
+
+    if (!record || now - record.firstAttempt >= this.windowMs) {
+      this.attempts.set(clientKey, { count: 1, firstAttempt: now });
+      return;
+    }
+
+    record.count += 1;
+  }
+
+  public reset(clientKey: string): void {
+    this.attempts.delete(clientKey);
+  }
+}
+
+function createUnlockRateLimiter(): UnlockRateLimiter {
+  return new UnlockRateLimiter(UNLOCK_RATE_LIMIT_MAX_ATTEMPTS, UNLOCK_RATE_LIMIT_WINDOW_MS);
+}
+
+function getUnlockRateLimitKey(req: IncomingMessage): string {
+  return req.socket.remoteAddress || 'unknown';
+}
+
+function isInvalidUnlockError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return message.includes('decryption failed') || message.includes('invalid key');
+}
+
 export interface WebUiServerOptions {
   host?: string;
   port?: number;
@@ -761,6 +831,7 @@ async function handleApiRequest(
   req: IncomingMessage,
   res: ServerResponse,
   requestUrl: URL,
+  unlockRateLimiter: UnlockRateLimiter,
 ): Promise<void> {
   const method = req.method ?? 'GET';
   const pathname = requestUrl.pathname;
@@ -854,11 +925,23 @@ async function handleApiRequest(
       throw new HttpError(404, 'Vault not initialized.');
     }
 
-    await unlock(password!);
-    sendJson(res, 200, {
-      unlocked: true,
-      stats: getStats(),
-    });
+    const unlockKey = getUnlockRateLimitKey(req);
+    unlockRateLimiter.assertAllowed(unlockKey);
+
+    try {
+      await unlock(password!);
+      unlockRateLimiter.reset(unlockKey);
+      sendJson(res, 200, {
+        unlocked: true,
+        stats: getStats(),
+      });
+    } catch (error) {
+      if (isInvalidUnlockError(error)) {
+        unlockRateLimiter.recordFailure(unlockKey);
+        throw new HttpError(401, 'Invalid password.');
+      }
+      throw error;
+    }
     return;
   }
 
@@ -1420,7 +1503,11 @@ async function handleApiRequest(
   sendJson(res, 404, { error: 'Not found.' });
 }
 
-async function requestHandler(req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function requestHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  unlockRateLimiter: UnlockRateLimiter,
+): Promise<void> {
   try {
     const method = req.method ?? 'GET';
     requireLocalhostRequest(req);
@@ -1451,7 +1538,7 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
     }
 
     if (requestUrl.pathname.startsWith('/api/')) {
-      await handleApiRequest(req, res, requestUrl);
+      await handleApiRequest(req, res, requestUrl, unlockRateLimiter);
       return;
     }
 
@@ -1512,8 +1599,9 @@ export async function startWebUiServer(options: WebUiServerOptions = {}): Promis
   }
   const host = DEFAULT_HOST;
   const port = options.port ?? DEFAULT_PORT;
+  const unlockRateLimiter = createUnlockRateLimiter();
   const server = createServer((req, res) => {
-    void requestHandler(req, res);
+    void requestHandler(req, res, unlockRateLimiter);
   });
 
   await new Promise<void>((resolve, reject) => {
