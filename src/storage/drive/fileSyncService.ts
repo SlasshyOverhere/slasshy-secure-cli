@@ -229,7 +229,7 @@ export async function deleteFileFromCloud(
   cloudChunks: CloudFileChunk[]
 ): Promise<void> {
   await ensureDriveAuthenticated();
-  const errors: string[] = [];
+  const errors: Array<{ chunkIndex: number; message: string }> = [];
 
   const deleteTasks = cloudChunks.map((chunk) => {
     return async (): Promise<void> => {
@@ -243,8 +243,11 @@ export async function deleteFileFromCloud(
             // File already deleted, ignore
             return;
           }
-          errors.push(`Chunk ${chunk.chunkIndex}: ${error.message}`);
+          errors.push({ chunkIndex: chunk.chunkIndex, message: error.message });
+          return;
         }
+
+        errors.push({ chunkIndex: chunk.chunkIndex, message: 'Unknown error' });
       }
     };
   });
@@ -252,7 +255,8 @@ export async function deleteFileFromCloud(
   await runParallel(deleteTasks, PARALLEL_LIMIT);
 
   if (errors.length > 0) {
-    throw new Error(`Failed to delete some chunks from cloud: ${errors.join(', ')}`);
+    errors.sort((left, right) => left.chunkIndex - right.chunkIndex);
+    throw new Error(`Failed to delete some chunks from cloud: ${errors.map((error) => `Chunk ${error.chunkIndex}: ${error.message}`).join(', ')}`);
   }
 }
 
