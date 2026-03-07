@@ -102,7 +102,9 @@ export function detectConflicts(
   const processedIds = new Set<string>();
 
   // Check local entries against remote
-  for (const [id, local] of Object.entries(localEntries)) {
+  for (const id in localEntries) {
+    if (!Object.hasOwn(localEntries, id)) continue;
+    const local = localEntries[id]!;
     processedIds.add(id);
     const remote = remoteEntries[id];
     const versionInfo = syncState.entryVersions[id];
@@ -158,7 +160,9 @@ export function detectConflicts(
   }
 
   // Check for remotely created entries that were deleted locally
-  for (const [id, remote] of Object.entries(remoteEntries)) {
+  for (const id in remoteEntries) {
+    if (!Object.hasOwn(remoteEntries, id)) continue;
+    const remote = remoteEntries[id]!;
     if (processedIds.has(id)) continue;
 
     const versionInfo = syncState.entryVersions[id];

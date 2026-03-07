@@ -188,7 +188,9 @@ export async function syncWithDrive(): Promise<SyncResult> {
   }
 
   // Find entries that need to be uploaded (no fragments yet)
-  for (const [entryId, indexEntry] of Object.entries(vaultIndex.entries)) {
+  for (const entryId in vaultIndex.entries) {
+    if (!Object.hasOwn(vaultIndex.entries, entryId)) continue;
+    const indexEntry = vaultIndex.entries[entryId]!;
     if (indexEntry.fragments.length === 0) {
       // This entry needs to be uploaded
       // For now, we skip - user needs to provide carrier images
@@ -214,7 +216,9 @@ export function getSyncStatus(): {
 
   let pendingUploads = 0;
   if (vaultIndex) {
-    for (const indexEntry of Object.values(vaultIndex.entries)) {
+    for (const entryId in vaultIndex.entries) {
+      if (!Object.hasOwn(vaultIndex.entries, entryId)) continue;
+      const indexEntry = vaultIndex.entries[entryId]!;
       if (indexEntry.fragments.length === 0) {
         pendingUploads++;
       }
