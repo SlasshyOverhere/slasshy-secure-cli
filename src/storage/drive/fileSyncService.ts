@@ -229,26 +229,34 @@ export async function deleteFileFromCloud(
   cloudChunks: CloudFileChunk[]
 ): Promise<void> {
   await ensureDriveAuthenticated();
-  const errors: string[] = [];
+  const errors: Array<{ chunkIndex: number; message: string }> = [];
 
-  for (const chunk of cloudChunks) {
-    try {
-      await deleteFromAppData(chunk.driveFileId);
-    } catch (error) {
-      // Only ignore 404 "file not found" errors (already deleted)
-      if (error instanceof Error) {
-        const message = error.message.toLowerCase();
-        if (message.includes('not found') || message.includes('404')) {
-          // File already deleted, ignore
-          continue;
+  const deleteTasks = cloudChunks.map((chunk) => {
+    return async (): Promise<void> => {
+      try {
+        await deleteFromAppData(chunk.driveFileId);
+      } catch (error) {
+        // Only ignore 404 "file not found" errors (already deleted)
+        if (error instanceof Error) {
+          const message = error.message.toLowerCase();
+          if (message.includes('not found') || message.includes('404')) {
+            // File already deleted, ignore
+            return;
+          }
+          errors.push({ chunkIndex: chunk.chunkIndex, message: error.message });
+          return;
         }
-        errors.push(`Chunk ${chunk.chunkIndex}: ${error.message}`);
+
+        errors.push({ chunkIndex: chunk.chunkIndex, message: 'Unknown error' });
       }
-    }
-  }
+    };
+  });
+
+  await runParallel(deleteTasks, PARALLEL_LIMIT);
 
   if (errors.length > 0) {
-    throw new Error(`Failed to delete some chunks from cloud: ${errors.join(', ')}`);
+    errors.sort((left, right) => left.chunkIndex - right.chunkIndex);
+    throw new Error(`Failed to delete some chunks from cloud: ${errors.map((error) => `Chunk ${error.chunkIndex}: ${error.message}`).join(', ')}`);
   }
 }
 
