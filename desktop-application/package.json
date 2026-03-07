@@ -1,16 +1,17 @@
 {
   "name": "desktop-application",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "backend:build": "npm --prefix .. run build",
+    "backend:prepare-runtime": "node ./scripts/prepare-backend-runtime.mjs",
     "tauri": "tauri",
-    "tauri:dev": "npm run backend:build && tauri dev",
-    "tauri:build": "npm run backend:build && tauri build"
+    "tauri:dev": "npm run backend:build && npm run backend:prepare-runtime && tauri dev",
+    "tauri:build": "npm run backend:build && npm run backend:prepare-runtime && tauri build"
   },
   "dependencies": {
     "react": "^19.1.0",

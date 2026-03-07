@@ -315,6 +315,8 @@ function shouldSkipAutoUpdateCheck(cmd: string | undefined): boolean {
   return [
     'update',
     'desktop',
+    'web',
+    'ui',
     'version',
     '-v',
     '--version',

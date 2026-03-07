@@ -6,11 +6,24 @@ All notable changes to this project will be documented in this file.
 
 - No unreleased entries yet.
 
+## [0.1.3] - 2026-03-07
+
+### Fixed
+
+- Desktop installer/runtime now ships a self-contained backend runtime with production dependencies and a bundled Node executable, so installed desktop launches no longer fail on missing modules.
+- Desktop sidecar startup errors now surface the backend stderr/stdout details instead of only reporting `exit code: 1`.
+- CLI scheduled npm update prompts are skipped for `web` / `ui` launches so desktop startup does not get delayed by update checks.
+
+### Improved
+
+- Web UI keyboard focus styling now stays visible on buttons and active entry rows.
+- Web UI unlock now has bounded brute-force protection with tests, while preserving `/api/init` behavior and real server error handling.
+- Cloud chunk deletions now run with bounded parallelism and deterministic aggregated error reporting.
+
 ## [0.1.2] - 2026-03-03
 
 ### Fixed
 
-- Desktop installer/runtime startup issue by bundling root runtime artifacts into Tauri resources (`blankdrive-runtime/dist`, `package.json`, logo asset).
 - Added missing `ensureUnlocked()` guard to `/api/cli/run` in the Web UI server.
 
 ### Improved

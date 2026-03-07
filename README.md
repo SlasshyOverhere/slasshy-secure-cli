@@ -6,15 +6,15 @@
 
 Client-side, zero-knowledge vault for passwords, notes, TOTP secrets, and encrypted files synced to Google Drive.
 
-Current release: `0.1.2`
+Current release: `0.1.3`
 Release notes: see `CHANGELOG.md`
 
-## What's New In 0.1.2
+## What's New In 0.1.3
 
-- Fixed desktop installer runtime startup by bundling backend runtime files inside Tauri resources.
-- Added missing auth guard on `/api/cli/run` in Web UI (`ensureUnlocked()`), closing local unauthenticated CLI execution risk.
-- Optimized vault entry iteration path for large vaults with lower allocation overhead.
-- Added npm-based CLI self-update flow: `BLANK update --check`, `BLANK update --install`.
+- Fixed the packaged desktop app so the installed launcher ships its own backend runtime, production dependencies, and bundled Node executable.
+- Added safer Web UI unlock brute-force protection with reset-on-success behavior and test coverage.
+- Improved Web UI keyboard accessibility so focused active entry rows keep a visible focus ring.
+- Parallelized cloud chunk deletions with bounded concurrency and deterministic error reporting.
 
 ## CLI Use Case Demo
 

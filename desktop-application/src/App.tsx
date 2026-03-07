@@ -183,8 +183,8 @@ function App() {
         </div>
 
         <p className="hint">
-          This launcher runs your existing Node CLI in background <code>web</code> mode and opens
-          the same local UI, so desktop and terminal share one backend.
+          This launcher starts the packaged BlankDrive backend in background <code>web</code>{" "}
+          mode and opens the same local UI, so desktop and terminal share the same vault format.
         </p>
       </section>
     </main>

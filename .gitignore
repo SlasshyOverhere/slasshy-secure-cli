@@ -30,3 +30,4 @@ agent-report/
 
 # Remotion workspace (generated media and local tooling)
 remotion/
+desktop-application/.backend-runtime/

@@ -27,6 +27,20 @@ fn backend_url(port: u16) -> String {
     format!("http://localhost:{port}")
 }
 
+fn resolve_node_binary(backend_root: &PathBuf) -> PathBuf {
+    if let Ok(value) = std::env::var("BLANKDRIVE_NODE_BIN") {
+        return PathBuf::from(value);
+    }
+
+    let bundled_name = if cfg!(windows) { "node.exe" } else { "node" };
+    let bundled_node = backend_root.join("node").join(bundled_name);
+    if bundled_node.is_file() {
+        return bundled_node;
+    }
+
+    PathBuf::from("node")
+}
+
 fn locate_backend_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let mut candidates: Vec<PathBuf> = Vec::new();
 
@@ -38,7 +52,11 @@ fn locate_backend_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         candidates.push(current);
     }
 
-    candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join(".."));
+    candidates.push(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join(".."),
+    );
 
     if let Ok(resource_dir) = app.path().resource_dir() {
         candidates.push(resource_dir.join("blankdrive-runtime"));
@@ -127,8 +145,8 @@ fn run_blankdrive_cli(app: &tauri::AppHandle, args: &[&str]) -> Result<Output, S
         ));
     }
 
-    let node_bin = std::env::var("BLANKDRIVE_NODE_BIN").unwrap_or_else(|_| "node".to_string());
-    let mut command = Command::new(node_bin.clone());
+    let node_bin = resolve_node_binary(&backend_root);
+    let mut command = Command::new(&node_bin);
     command
         .arg(&cli_entrypoint)
         .args(args)
@@ -137,9 +155,12 @@ fn run_blankdrive_cli(app: &tauri::AppHandle, args: &[&str]) -> Result<Output, S
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    command
-        .output()
-        .map_err(|error| format!("Failed to run BLANK command with `{node_bin}`: {error}."))
+    command.output().map_err(|error| {
+        format!(
+            "Failed to run BLANK command with `{}`: {error}.",
+            node_bin.display()
+        )
+    })
 }
 
 #[tauri::command]
@@ -170,10 +191,10 @@ fn ensure_blankdrive_backend(
         ));
     }
 
-    let node_bin = std::env::var("BLANKDRIVE_NODE_BIN").unwrap_or_else(|_| "node".to_string());
+    let node_bin = resolve_node_binary(&backend_root);
     let port = select_port(DEFAULT_PORT, PORT_SCAN_COUNT)?;
 
-    let mut command = Command::new(node_bin.clone());
+    let mut command = Command::new(&node_bin);
     command
         .arg(&cli_entrypoint)
         .arg("web")
@@ -181,11 +202,14 @@ fn ensure_blankdrive_backend(
         .arg(port.to_string())
         .current_dir(&backend_root)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
     let mut child = command.spawn().map_err(|error| {
-        format!("Failed to launch Node sidecar with `{node_bin}`: {error}.")
+        format!(
+            "Failed to launch Node sidecar with `{}`: {error}.",
+            node_bin.display()
+        )
     })?;
 
     for _ in 0..STARTUP_RETRY_COUNT {
@@ -198,6 +222,30 @@ fn ensure_blankdrive_backend(
             .try_wait()
             .map_err(|error| format!("Failed to query backend process: {error}."))?
         {
+            let mut stderr = String::new();
+            if let Some(mut stream) = child.stderr.take() {
+                let _ = stream.read_to_string(&mut stderr);
+            }
+
+            let mut stdout = String::new();
+            if let Some(mut stream) = child.stdout.take() {
+                let _ = stream.read_to_string(&mut stdout);
+            }
+
+            let details = stderr.trim();
+            if !details.is_empty() {
+                return Err(format!(
+                    "BlankDrive backend exited while starting (status: {status}).\n{details}"
+                ));
+            }
+
+            let output = stdout.trim();
+            if !output.is_empty() {
+                return Err(format!(
+                    "BlankDrive backend exited while starting (status: {status}).\n{output}"
+                ));
+            }
+
             return Err(format!(
                 "BlankDrive backend exited while starting (status: {status})."
             ));

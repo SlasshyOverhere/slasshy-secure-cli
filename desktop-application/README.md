@@ -1,16 +1,17 @@
 # BlankDrive Desktop (Tauri)
 
-Desktop shell for BlankDrive that reuses the existing Node CLI backend.
+Desktop shell for BlankDrive that packages the BlankDrive Node backend with the installer.
 This desktop release is focused on simplicity and stability while keeping one shared backend across CLI, Web UI, and desktop.
 
 ## Architecture
 
 - Tauri app (`desktop-application`) starts a local Node sidecar process.
+- Release builds bundle `dist/`, production `node_modules/`, and a Node runtime inside `blankdrive-runtime`.
 - Sidecar command: `node dist/index.js web --port <port>`.
 - The desktop window then loads the local BlankDrive Web UI URL.
-- This means CLI and desktop use the same backend/runtime and vault data.
+- This means CLI and desktop use the same backend/runtime and vault data format.
 
-## Prerequisites
+## Development Prerequisites
 
 - Node.js 18+ (22 LTS recommended)
 - Rust toolchain (`rustup`, stable)
@@ -25,7 +26,7 @@ npm install
 npm run tauri:dev
 ```
 
-`tauri:dev` automatically runs `npm --prefix .. run build` first, so `../dist/index.js` is available.
+`tauri:dev` automatically builds the backend and prepares a packaged runtime before launching Tauri.
 
 ## Build Installer
 
@@ -34,6 +35,8 @@ From `D:\BlankDrive\desktop-application`:
 ```bash
 npm run tauri:build
 ```
+
+`tauri:build` prepares a self-contained `blankdrive-runtime` folder first, including the backend JS, production dependencies, and a bundled Node executable.
 
 ## Release Distribution
 
@@ -59,7 +62,7 @@ BLANK update --install
 ## Environment Overrides
 
 - `BLANKDRIVE_ROOT`: force the backend root folder (must contain `dist/index.js`)
-- `BLANKDRIVE_NODE_BIN`: force Node executable path (defaults to `node`)
+- `BLANKDRIVE_NODE_BIN`: force Node executable path (overrides the bundled Node runtime when set)
 
 ## Current Scope
 
