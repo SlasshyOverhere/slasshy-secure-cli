@@ -102,7 +102,6 @@ export function detectConflicts(
   const processedIds = new Set<string>();
 
   // Check local entries against remote
-  // OPTIMIZATION: Use for...in loop instead of Object.entries to avoid massive array allocation overhead
   for (const id in localEntries) {
     if (!Object.hasOwn(localEntries, id)) continue;
     const local = localEntries[id]!;
@@ -161,7 +160,6 @@ export function detectConflicts(
   }
 
   // Check for remotely created entries that were deleted locally
-  // OPTIMIZATION: Use for...in loop instead of Object.entries to avoid massive array allocation overhead
   for (const id in remoteEntries) {
     if (!Object.hasOwn(remoteEntries, id)) continue;
     const remote = remoteEntries[id]!;

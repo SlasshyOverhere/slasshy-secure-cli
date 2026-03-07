@@ -345,7 +345,6 @@ async function performSync(force?: boolean): Promise<void> {
       displaySyncSummary(resolutions);
     } else {
       // No conflicts, just update sync state
-      // OPTIMIZATION: Use for...in loop instead of Object.entries to avoid massive array allocation overhead
       for (const id in localEntries) {
         if (!Object.hasOwn(localEntries, id)) continue;
         const { entry } = localEntries[id]!;

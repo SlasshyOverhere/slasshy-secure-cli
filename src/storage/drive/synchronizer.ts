@@ -188,7 +188,6 @@ export async function syncWithDrive(): Promise<SyncResult> {
   }
 
   // Find entries that need to be uploaded (no fragments yet)
-  // OPTIMIZATION: Use for...in loop instead of Object.entries to avoid massive array allocation overhead
   for (const entryId in vaultIndex.entries) {
     if (!Object.hasOwn(vaultIndex.entries, entryId)) continue;
     const indexEntry = vaultIndex.entries[entryId]!;
@@ -217,7 +216,6 @@ export function getSyncStatus(): {
 
   let pendingUploads = 0;
   if (vaultIndex) {
-    // OPTIMIZATION: Use for...in loop instead of Object.values to avoid massive array allocation overhead
     for (const entryId in vaultIndex.entries) {
       if (!Object.hasOwn(vaultIndex.entries, entryId)) continue;
       const indexEntry = vaultIndex.entries[entryId]!;
