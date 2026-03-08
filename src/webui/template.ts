@@ -521,6 +521,11 @@ button:disabled {
   font-size: 0.82rem;
 }
 
+.hint.empty-state {
+  padding: 20px 10px;
+  text-align: center;
+}
+
 .hidden {
   display: none !important;
 }
@@ -884,7 +889,7 @@ input[type="file"]::file-selector-button {
     const DEFAULT_UPLOAD_CHUNK_BYTES=2*1024*1024;
 
     /* ── State ── */
-    const s={status:{vaultExists:false,unlocked:false,stats:null,vaultPath:''},entries:[],selectedId:null,selected:null};
+    const s={status:{vaultExists:false,unlocked:false,stats:null,vaultPath:''},entries:[],entryFilters:{query:'',type:'all'},selectedId:null,selected:null};
     const el={
       badge:document.getElementById('vaultBadge'),
       meta:document.getElementById('meta'),
@@ -963,7 +968,8 @@ input[type="file"]::file-selector-button {
     function isVideoEntry(en){if(!en)return false;const mime=String(en.mimeType||'').toLowerCase();if(mime.startsWith('video/'))return true;const fileName=String(en.originalName||en.title||'').toLowerCase();return VIDEO_EXT_PATTERN.test(fileName)}
     function closeVideoPreview(){el.videoModal.classList.add('hidden');el.videoPlayer.pause();el.videoPlayer.removeAttribute('src');el.videoPlayer.load()}
     function switchDetail(type,canWatchVideo){const note=type==='note',file=type==='file';el.detailPwd.classList.toggle('hidden',note||file);el.detailNote.classList.toggle('hidden',!note);el.detailFile.classList.toggle('hidden',!file);el.saveDetail.disabled=file;el.copyPassword.classList.toggle('hidden',note||file);el.downloadFile.classList.toggle('hidden',!file);el.watchVideo.classList.toggle('hidden',!canWatchVideo);if(!canWatchVideo)closeVideoPreview()}
-    function queryUrl(){const p=new URLSearchParams();const q=String(el.search.value||'').trim();const t=String(el.typeFilter.value||'all');if(q)p.set('query',q);if(t!=='all')p.set('type',t);const qs=p.toString();return qs?'/api/entries?'+qs:'/api/entries'}
+    function entryFilters(){return {query:String(el.search.value||'').trim(),type:String(el.typeFilter.value||'all')}}
+    function queryUrl(filters){const p=new URLSearchParams();if(filters.query)p.set('query',filters.query);if(filters.type!=='all')p.set('type',filters.type);const qs=p.toString();return qs?'/api/entries?'+qs:'/api/entries'}
 
     async function api(path,opt){const o=opt?Object.assign({},opt):{};const m=String(o.method||'GET').toUpperCase();const h=new Headers(o.headers||{});if(m!=='GET')h.set('X-BlankDrive-UI','1');if(o.body!==undefined&&typeof o.body!=='string'){h.set('Content-Type','application/json');o.body=JSON.stringify(o.body)}o.method=m;o.headers=h;const r=await fetch(path,o);const ct=r.headers.get('content-type')||'';const d=ct.includes('application/json')?await r.json():await r.text();if(!r.ok){const msg=d&&typeof d==='object'&&d.error?d.error:'Request failed ('+r.status+')';throw new Error(msg)}return d}
 
@@ -991,7 +997,7 @@ input[type="file"]::file-selector-button {
     function renderEntries(){
       el.entryList.innerHTML='';
       if(!s.status.unlocked){const li=document.createElement('li');li.className='hint';li.textContent='Vault is locked.';el.entryList.appendChild(li);return}
-      if(!s.entries.length){const li=document.createElement('li');li.className='hint';li.style.textAlign='center';li.style.padding='20px 10px';li.textContent=(el.search.value||el.typeFilter.value!=='all')?'No entries match your search.':'Vault is empty. Create an entry or upload a file.';el.entryList.appendChild(li);return}
+      if(!s.entries.length){const li=document.createElement('li');li.className='hint empty-state';li.textContent=(s.entryFilters.query||s.entryFilters.type!=='all')?'No entries match your search.':'Vault is empty. Create an entry or upload a file.';el.entryList.appendChild(li);return}
       s.entries.forEach(en=>{
         const li=document.createElement('li');
         const b=document.createElement('button');b.type='button';b.className='entry-item';
@@ -1021,7 +1027,7 @@ input[type="file"]::file-selector-button {
     }
 
     async function refreshStatus(load){s.status=await api('/api/status');statusUi();if(load!==false&&s.status.unlocked)await refreshEntries()}
-    async function refreshEntries(){if(!s.status.unlocked)return;const d=await api(queryUrl());s.entries=Array.isArray(d.entries)?d.entries:[];renderEntries();if(s.selectedId&&!s.entries.some(x=>x.id===s.selectedId)){s.selectedId=null;s.selected=null;showDetail('Entry no longer exists.')}}
+    async function refreshEntries(){if(!s.status.unlocked)return;const filters=entryFilters();const d=await api(queryUrl(filters));s.entryFilters=filters;s.entries=Array.isArray(d.entries)?d.entries:[];renderEntries();if(s.selectedId&&!s.entries.some(x=>x.id===s.selectedId)){s.selectedId=null;s.selected=null;showDetail('Entry no longer exists.')}}
     async function loadEntry(id){if(!s.status.unlocked)return;s.selectedId=id;renderEntries();try{const d=await api('/api/entries/'+encodeURIComponent(id));s.selected=d.entry||null;if(!s.selected){showDetail('Entry not found.');return}fillDetail(s.selected)}catch(err){s.selected=null;showDetail(err instanceof Error?err.message:'Failed to load entry.')}}
 
     function createPayload(){if(nt(el.createType.value)==='note')return{type:'note',title:String(el.createTitle.value||'').trim(),content:String(el.createContent.value||'')};return{type:'password',title:String(el.createTitle.value||'').trim(),username:String(el.createUsername.value||''),password:String(el.createPassword.value||''),url:String(el.createUrl.value||''),category:String(el.createCategory.value||''),notes:String(el.createNotes.value||'')}}
