@@ -1,0 +1,3 @@
+## 2024-03-24 - Empty State Center Alignment
+**Learning:** Adding user-friendly empty state text for different filters improves UX significantly by reassuring users that their action was successful, it's just that there are no entries. Also, formatting `hint` states with padding and center alignment instead of left-aligned text makes it look like a purposeful state rather than a broken page element.
+**Action:** When handling empty data views (like search filters or empty vaults), provide specific feedback and use center alignment with appropriate padding to separate the empty state visually from normal content flow.

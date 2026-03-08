@@ -991,7 +991,7 @@ input[type="file"]::file-selector-button {
     function renderEntries(){
       el.entryList.innerHTML='';
       if(!s.status.unlocked){const li=document.createElement('li');li.className='hint';li.textContent='Vault is locked.';el.entryList.appendChild(li);return}
-      if(!s.entries.length){const li=document.createElement('li');li.className='hint';li.textContent='No entries found.';el.entryList.appendChild(li);return}
+      if(!s.entries.length){const li=document.createElement('li');li.className='hint';li.style.textAlign='center';li.style.padding='20px 10px';li.textContent=(el.search.value||el.typeFilter.value!=='all')?'No entries match your search.':'Vault is empty. Create an entry or upload a file.';el.entryList.appendChild(li);return}
       s.entries.forEach(en=>{
         const li=document.createElement('li');
         const b=document.createElement('button');b.type='button';b.className='entry-item';
