@@ -1245,9 +1245,6 @@ export async function deleteFromAppData(fileId: string): Promise<void> {
   const drive = getDriveClient();
 
   try {
-    // ⚡ Bolt Optimization: Removed redundant drive.files.get check.
-    // drive.files.delete already returns a 404 if the file is missing,
-    // so we can cut network requests in half during deletion.
     await drive.files.delete({ fileId });
   } catch (error: unknown) {
     // Extract detailed error from Google API response
