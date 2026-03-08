@@ -1245,13 +1245,6 @@ export async function deleteFromAppData(fileId: string): Promise<void> {
   const drive = getDriveClient();
 
   try {
-    // First verify the file exists and get its info
-    await drive.files.get({
-      fileId,
-      fields: 'id,name',
-    });
-
-    // Now delete it
     await drive.files.delete({ fileId });
   } catch (error: unknown) {
     // Extract detailed error from Google API response
