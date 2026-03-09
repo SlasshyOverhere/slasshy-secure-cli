@@ -15,6 +15,7 @@ import {
   isAuthenticated,
   listAppDataFiles,
   deleteFromAppData,
+  runParallel,
 } from '../../storage/drive/index.js';
 
 const VAULT_DIR = path.join(os.homedir(), '.slasshy');
@@ -75,11 +76,14 @@ export async function destructCommand(): Promise<void> {
       spinner.text = 'Deleting cloud data...';
       try {
         const cloudFiles = await listAppDataFiles();
-        for (const file of cloudFiles) {
-          if (file.id) {
-            await deleteFromAppData(file.id);
-          }
-        }
+
+        const deleteTasks = cloudFiles
+          .filter(file => file.id)
+          .map(file => async () => {
+            await deleteFromAppData(file.id!);
+          });
+
+        await runParallel(deleteTasks, 5);
         spinner.text = `Deleted ${cloudFiles.length} cloud files`;
       } catch (error) {
         // Continue even if cloud deletion fails

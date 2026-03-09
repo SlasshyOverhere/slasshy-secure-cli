@@ -48,6 +48,7 @@ export {
 } from './synchronizer.js';
 
 export {
+  runParallel,
   uploadFileToCloud,
   downloadFileFromCloud,
   deleteFileFromCloud,

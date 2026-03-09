@@ -52,7 +52,7 @@ export interface CloudFileInfo {
 /**
  * Run tasks with limited parallelism
  */
-async function runParallel<T>(
+export async function runParallel<T>(
   tasks: (() => Promise<T>)[],
   limit: number,
   onTaskComplete?: (completed: number, total: number, result: T) => void
