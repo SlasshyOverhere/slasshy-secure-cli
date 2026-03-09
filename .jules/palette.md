@@ -1,0 +1,3 @@
+## 2024-05-18 - A11y Focus Management for Modals
+**Learning:** This app frequently toggles hidden modal elements (like the video player). If focus is not explicitly shifted into the modal (e.g., to a "Close" button) and restored upon exiting, keyboard users and screen readers lose context and are forced to re-navigate the DOM.
+**Action:** When toggling modals or popovers with `.classList.remove('hidden')`, immediately move focus to the first interactive element inside it (like a close button). When hiding the modal, restore focus to the button that triggered it.
