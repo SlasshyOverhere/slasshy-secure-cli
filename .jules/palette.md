@@ -1,0 +1,3 @@
+## 2025-02-17 - Missing Async ARIA Attributes
+**Learning:** Found an accessibility issue pattern specific to this app's components where state-mutating UI indicators rely entirely on text changes (`busy` toggles button text and disables it) without screen-reader accessible context clues (`aria-busy`), and active list items like sidebar entries rely purely on styling classes (`.active`) without semantic mapping (`aria-current`).
+**Action:** When creating disabled states for loading elements, always include `aria-busy="true"`. Similarly, for custom list items functioning as navigation/selection targets, complement active/selected classes with `aria-current="true"`.
