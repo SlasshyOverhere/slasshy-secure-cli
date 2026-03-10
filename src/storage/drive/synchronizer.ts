@@ -28,6 +28,7 @@ import {
 } from '../../obfuscation/index.js';
 import { encryptObject, decryptObject, getEntryKey } from '../../crypto/index.js';
 import { randomInt } from '../../crypto/random.js';
+import { runParallel, PARALLEL_LIMIT } from './fileSyncService.js';
 
 const BLANKDRIVE_FOLDER_NAME = 'Photos'; // Innocuous folder name
 const DURESS_HASH_FILE = path.join(os.homedir(), '.slasshy', 'duress.hash');
@@ -78,10 +79,8 @@ export async function uploadEntry(
   }
 
   const folderId = await getBlankDriveFolder();
-  const driveFileIds: string[] = [];
 
-  for (let i = 0; i < fragments.length; i++) {
-    const fragment = fragments[i]!;
+  const uploadTasks = fragments.map((fragment, i) => async () => {
     const carrierPath = carrierPaths[i]!;
 
     // Serialize fragment
@@ -100,7 +99,6 @@ export async function uploadEntry(
 
     // Upload to Drive
     const fileId = await uploadFile(outputPath, outputFilename, 'image/png', folderId);
-    driveFileIds.push(fileId);
 
     // Clean up local carrier copy
     try {
@@ -108,7 +106,11 @@ export async function uploadEntry(
     } catch {
       // Ignore cleanup errors
     }
-  }
+
+    return fileId;
+  });
+
+  const driveFileIds = await runParallel(uploadTasks, PARALLEL_LIMIT);
 
   return driveFileIds;
 }
@@ -125,17 +127,15 @@ export async function downloadEntry(
   }
 
   const { carriers } = getVaultPaths();
-  const fragments: ReturnType<typeof deserializeFragment>[] = [];
 
-  for (const fileId of driveFileIds) {
+  const downloadTasks = driveFileIds.map((fileId, index) => async () => {
     // Download file
-    const tempPath = path.join(carriers, `temp_${fileId}.png`);
+    const tempPath = path.join(carriers, `temp_${fileId}_${index}.png`);
     await downloadFile(fileId, tempPath);
 
     // Extract data
     const { data } = await extractFromPNG(tempPath);
     const fragment = deserializeFragment(data);
-    fragments.push(fragment);
 
     // Clean up temp file
     try {
@@ -143,7 +143,11 @@ export async function downloadEntry(
     } catch {
       // Ignore cleanup errors
     }
-  }
+
+    return fragment;
+  });
+
+  const fragments = await runParallel(downloadTasks, PARALLEL_LIMIT);
 
   // Reassemble fragments
   return reassembleFragments(fragments);
@@ -157,14 +161,16 @@ export async function deleteEntryFromDrive(driveFileIds: string[]): Promise<void
     throw new Error('Drive not connected');
   }
 
-  for (const fileId of driveFileIds) {
+  const deleteTasks = driveFileIds.map((fileId) => async () => {
     try {
       await deleteFile(fileId);
     } catch (error) {
       // Log but continue with other deletions
       console.error(`Failed to delete file ${fileId}:`, error);
     }
-  }
+  });
+
+  await runParallel(deleteTasks, PARALLEL_LIMIT);
 }
 
 /**
