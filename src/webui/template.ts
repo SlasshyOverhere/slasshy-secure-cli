@@ -963,10 +963,10 @@ input[type="file"]::file-selector-button {
     const VIDEO_EXT_PATTERN=/\.(mp4|m4v|mov|webm|mkv|avi|ogv|ogg)$/i;
 
     function showToast(msg){el.toast.textContent=msg;el.toast.classList.add('show');if(toastTimer)clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.toast.classList.remove('show'),2800)}
-    function busy(btn,on,label,idle){if(!btn)return;if(!btn.dataset.idle)btn.dataset.idle=idle||btn.textContent||'';btn.disabled=on;btn.textContent=on?label:(idle||btn.dataset.idle);btn.setAttribute('aria-busy',on?'true':'false')}
+    function busy(btn,on,label,idle){if(!btn)return;if(!btn.dataset.idle)btn.dataset.idle=idle||btn.textContent||'';btn.disabled=on;if(on){btn.setAttribute('aria-busy','true')}else{btn.removeAttribute('aria-busy')}btn.textContent=on?label:(idle||btn.dataset.idle)}
     function switchCreate(){const note=el.createType.value==='note';el.createPwd.classList.toggle('hidden',note);el.createNote.classList.toggle('hidden',!note)}
     function isVideoEntry(en){if(!en)return false;const mime=String(en.mimeType||'').toLowerCase();if(mime.startsWith('video/'))return true;const fileName=String(en.originalName||en.title||'').toLowerCase();return VIDEO_EXT_PATTERN.test(fileName)}
-    function closeVideoPreview(){el.videoModal.classList.add('hidden');el.videoPlayer.pause();el.videoPlayer.removeAttribute('src');el.videoPlayer.load();if(!el.watchVideo.classList.contains('hidden')){el.watchVideo.focus()}}
+    function closeVideoPreview(){el.videoModal.classList.add('hidden');el.videoPlayer.pause();el.videoPlayer.removeAttribute('src');el.videoPlayer.load();if(!el.watchVideo.classList.contains('hidden')){el.watchVideo.focus();}}
     function switchDetail(type,canWatchVideo){const note=type==='note',file=type==='file';el.detailPwd.classList.toggle('hidden',note||file);el.detailNote.classList.toggle('hidden',!note);el.detailFile.classList.toggle('hidden',!file);el.saveDetail.disabled=file;el.copyPassword.classList.toggle('hidden',note||file);el.downloadFile.classList.toggle('hidden',!file);el.watchVideo.classList.toggle('hidden',!canWatchVideo);if(!canWatchVideo)closeVideoPreview()}
     function entryFilters(){return {query:String(el.search.value||'').trim(),type:String(el.typeFilter.value||'all')}}
     function queryUrl(filters){const p=new URLSearchParams();if(filters.query)p.set('query',filters.query);if(filters.type!=='all')p.set('type',filters.type);const qs=p.toString();return qs?'/api/entries?'+qs:'/api/entries'}
