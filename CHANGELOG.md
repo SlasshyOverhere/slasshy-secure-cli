@@ -6,6 +6,19 @@ All notable changes to this project will be documented in this file.
 
 - No unreleased entries yet.
 
+## [0.1.4] - 2026-03-12
+
+### Fixed
+
+- Prevented DNS rebinding in localhost checks by enforcing strict loopback matching.
+- Avoided redundant Drive delete preflight lookups with added error handling tests.
+
+### Improved
+
+- Parallelized Drive sync operations for upload, download, and delete paths.
+- Parallelized cloud destruct deletion for faster cleanup.
+- Improved Web UI accessibility and focus management for entry list, busy states, and modal video preview.
+
 ## [0.1.3] - 2026-03-07
 
 ### Fixed
