@@ -247,10 +247,10 @@ function isLoopbackHostName(hostName: string | null): boolean {
   if (hostName === 'localhost' || hostName === '::1' || hostName === '127.0.0.1') {
     return true;
   }
-  if (hostName.startsWith('127.')) {
-    return true;
-  }
-  return false;
+
+  // Strictly match 127.x.x.x IPv4 loopback range to prevent DNS rebinding bypass
+  // (e.g. 127.evildomain.com)
+  return /^127(?:\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$/.test(hostName);
 }
 
 function requireLocalhostRequest(req: IncomingMessage): void {
