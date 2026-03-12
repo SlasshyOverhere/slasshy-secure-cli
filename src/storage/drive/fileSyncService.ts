@@ -23,7 +23,7 @@ import fsSync from 'fs';
 const TEMP_FILES_DIR = path.join(process.env.TEMP || os.tmpdir(), 'slasshy_temp');
 
 // Number of parallel uploads/downloads
-const PARALLEL_LIMIT = 5;
+export const PARALLEL_LIMIT = 5;
 
 /**
  * Initialize Drive client from persisted session when needed.
@@ -52,7 +52,7 @@ export interface CloudFileInfo {
 /**
  * Run tasks with limited parallelism
  */
-async function runParallel<T>(
+export async function runParallel<T>(
   tasks: (() => Promise<T>)[],
   limit: number,
   onTaskComplete?: (completed: number, total: number, result: T) => void
