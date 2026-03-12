@@ -264,14 +264,17 @@ jobs:
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
       - name: Upload desktop assets to release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.package.outputs.version }}
-          files: |
-            desktop-application/src-tauri/target/release/bundle/**/*.exe
-            desktop-application/src-tauri/target/release/bundle/**/*.msi
-          fail_on_unmatched_files: true
-          overwrite_files: true
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="v${{ steps.package.outputs.version }}"
+          shopt -s nullglob globstar
+          files=(desktop-application/src-tauri/target/release/bundle/**/*.exe desktop-application/src-tauri/target/release/bundle/**/*.msi)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No desktop artifacts found to upload." >&2
+            exit 1
+          fi
+          gh release upload "$TAG" "${files[@]}" --clobber
 
