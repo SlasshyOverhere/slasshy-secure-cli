@@ -56,6 +56,8 @@ export {
   isCloudSyncAvailable,
   streamDownloadToFile,
   getParallelismInfo,
+  runParallel,
+  PARALLEL_LIMIT,
   type CloudFileChunk,
   type CloudFileInfo,
 } from './fileSyncService.js';
