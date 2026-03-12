@@ -9,7 +9,9 @@ export function isLoopbackHost(hostname: string): boolean {
     return true;
   }
 
-  return normalized.startsWith('127.');
+  // Strictly match 127.x.x.x IPv4 loopback range to prevent DNS rebinding bypass
+  // (e.g. 127.evildomain.com)
+  return /^127(?:\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$/.test(normalized);
 }
 
 /**
