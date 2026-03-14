@@ -606,9 +606,10 @@ export async function cleanupTempFiles(entryId: string, chunkCount: number): Pro
     if (chunkCount === 1) {
       await fs.unlink(path.join(TEMP_FILES_DIR, `${entryId}.bin`)).catch(() => {});
     } else {
-      for (let i = 0; i < chunkCount; i++) {
-        await fs.unlink(path.join(TEMP_FILES_DIR, `${entryId}_${i}.bin`)).catch(() => {});
-      }
+      const deleteTasks = Array.from({ length: chunkCount }, (_, i) =>
+        fs.unlink(path.join(TEMP_FILES_DIR, `${entryId}_${i}.bin`)).catch(() => {})
+      );
+      await Promise.all(deleteTasks);
     }
   } catch {
     // Ignore cleanup errors
