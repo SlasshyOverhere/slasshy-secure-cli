@@ -967,7 +967,7 @@ input[type="file"]::file-selector-button {
     function switchCreate(){const note=el.createType.value==='note';el.createPwd.classList.toggle('hidden',note);el.createNote.classList.toggle('hidden',!note)}
     function isVideoEntry(en){if(!en)return false;const mime=String(en.mimeType||'').toLowerCase();if(mime.startsWith('video/'))return true;const fileName=String(en.originalName||en.title||'').toLowerCase();return VIDEO_EXT_PATTERN.test(fileName)}
     function closeVideoPreview(){el.videoModal.classList.add('hidden');el.videoPlayer.pause();el.videoPlayer.removeAttribute('src');el.videoPlayer.load();if(!el.watchVideo.classList.contains('hidden')){el.watchVideo.focus();}}
-    function switchDetail(type,canWatchVideo){const note=type==='note',file=type==='file';el.detailPwd.classList.toggle('hidden',note||file);el.detailNote.classList.toggle('hidden',!note);el.detailFile.classList.toggle('hidden',!file);el.saveDetail.disabled=file;el.copyPassword.classList.toggle('hidden',note||file);el.downloadFile.classList.toggle('hidden',!file);el.watchVideo.classList.toggle('hidden',!canWatchVideo);if(!canWatchVideo)closeVideoPreview()}
+    function switchDetail(type,canWatchVideo){const note=type==='note',file=type==='file';el.detailPwd.classList.toggle('hidden',note||file);el.detailNote.classList.toggle('hidden',!note);el.detailFile.classList.toggle('hidden',!file);el.saveDetail.disabled=file;if(file){el.saveDetail.title='File metadata is read-only';}else{el.saveDetail.removeAttribute('title');}el.copyPassword.classList.toggle('hidden',note||file);el.downloadFile.classList.toggle('hidden',!file);el.watchVideo.classList.toggle('hidden',!canWatchVideo);if(!canWatchVideo)closeVideoPreview()}
     function entryFilters(){return {query:String(el.search.value||'').trim(),type:String(el.typeFilter.value||'all')}}
     function queryUrl(filters){const p=new URLSearchParams();if(filters.query)p.set('query',filters.query);if(filters.type!=='all')p.set('type',filters.type);const qs=p.toString();return qs?'/api/entries?'+qs:'/api/entries'}
 
@@ -981,6 +981,7 @@ input[type="file"]::file-selector-button {
       else{el.badge.textContent='Unlocked';el.badge.className='badge ok';el.meta.textContent='Created: '+dt(s.status.stats?s.status.stats.created:null)}
       el.entryCount.textContent='Entries: '+String(s.status.stats?s.status.stats.entryCount:0);
       el.vaultPath.textContent=s.status.vaultPath||'';
+      el.vaultPath.title=s.status.vaultPath||'';
 
       el.initForm.classList.toggle('hidden', s.status.vaultExists);
       el.unlockForm.classList.toggle('hidden', !s.status.vaultExists || s.status.unlocked);
@@ -1002,10 +1003,16 @@ input[type="file"]::file-selector-button {
         const li=document.createElement('li');
         const b=document.createElement('button');b.type='button';b.className='entry-item';
         if(s.selectedId===en.id){b.classList.add('active');b.setAttribute('aria-current','true');}
+
+        const ty=nt(en.entryType);
+        const modDate = new Date(en.modified).toLocaleDateString();
+        b.setAttribute('aria-label', (en.favorite ? 'Favorite: ' : '') + en.title + ', ' + ty + ' entry, modified ' + modDate + (en.category ? ', Category: ' + en.category : ''));
+
         const t=document.createElement('div');t.className='entry-title';t.textContent=(en.favorite?'★ ':'')+en.title;
+        t.title = en.title;
         const m=document.createElement('div');m.className='entry-meta';
-        const ty=nt(en.entryType);const p=document.createElement('span');p.className='pill '+ty;p.textContent=ty;
-        const d=document.createElement('span');d.textContent=new Date(en.modified).toLocaleDateString();
+        const p=document.createElement('span');p.className='pill '+ty;p.textContent=ty;
+        const d=document.createElement('span');d.textContent=modDate;
         m.appendChild(p);
         if(en.category){const c=document.createElement('span');c.textContent='['+en.category+']';m.appendChild(c)}
         m.appendChild(d);b.appendChild(t);b.appendChild(m);
