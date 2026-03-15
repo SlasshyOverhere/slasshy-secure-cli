@@ -311,6 +311,8 @@ export async function searchEntries(query: string): Promise<Entry[]> {
   const indexKey = getIndexKey();
   const queryLower = query.toLowerCase();
 
+  const matchIds: string[] = [];
+
   for (const id in vaultIndex.entries) {
     if (!Object.hasOwn(vaultIndex.entries, id)) {
       continue;
@@ -324,13 +326,18 @@ export async function searchEntries(query: string): Promise<Entry[]> {
     try {
       const title = decryptToString(indexEntry.titleEncrypted, indexKey);
       if (title.toLowerCase().includes(queryLower)) {
-        const entry = await getEntry(id);
-        if (entry) {
-          results.push(entry);
-        }
+        matchIds.push(id);
       }
     } catch {
       // Skip entries that fail to decrypt
+    }
+  }
+
+  // Fetch all matched entries in parallel to avoid sequential disk I/O bottleneck
+  const entries = await Promise.all(matchIds.map(id => getEntry(id)));
+  for (const entry of entries) {
+    if (entry) {
+      results.push(entry);
     }
   }
 
