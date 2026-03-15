@@ -214,9 +214,20 @@ async function performSync(force?: boolean): Promise<void> {
     // Build local entries map
     const localEntries: Record<string, { entry: Entry; indexEntry: any }> = {};
 
-    for (const indexEntry of entries) {
-      if (indexEntry.entryType === 'password' || !indexEntry.entryType) {
+    // Filter relevant entries first
+    const relevantIndexEntries = entries.filter(e => e.entryType === 'password' || !e.entryType);
+
+    // Fetch all local entries in parallel in batches to avoid sequential disk I/O bottleneck
+    // Using a batch size of 20 to balance memory/file handles and speed
+    const batchSize = 20;
+    for (let i = 0; i < relevantIndexEntries.length; i += batchSize) {
+      const batch = relevantIndexEntries.slice(i, i + batchSize);
+      const batchResults = await Promise.all(batch.map(async (indexEntry) => {
         const entry = await getEntry(indexEntry.id);
+        return { indexEntry, entry };
+      }));
+
+      for (const { indexEntry, entry } of batchResults) {
         if (entry) {
           localEntries[indexEntry.id] = { entry: entry as Entry, indexEntry };
         }
