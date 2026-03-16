@@ -973,7 +973,23 @@ input[type="file"]::file-selector-button {
 
     async function api(path,opt){const o=opt?Object.assign({},opt):{};const m=String(o.method||'GET').toUpperCase();const h=new Headers(o.headers||{});if(m!=='GET')h.set('X-BlankDrive-UI','1');if(o.body!==undefined&&typeof o.body!=='string'){h.set('Content-Type','application/json');o.body=JSON.stringify(o.body)}o.method=m;o.headers=h;const r=await fetch(path,o);const ct=r.headers.get('content-type')||'';const d=ct.includes('application/json')?await r.json():await r.text();if(!r.ok){const msg=d&&typeof d==='object'&&d.error?d.error:'Request failed ('+r.status+')';throw new Error(msg)}return d}
 
-    function setUnlocked(enabled){el.search.disabled=!enabled;el.typeFilter.disabled=!enabled;el.reloadEntries.disabled=!enabled;el.createBtn.disabled=!enabled;el.uploadBtn.disabled=!enabled;el.lockButton.disabled=!enabled;el.createForm.querySelectorAll('input,textarea,select').forEach(n=>{if(n.id!=='createType')n.disabled=!enabled});el.uploadForm.querySelectorAll('input,textarea').forEach(n=>n.disabled=!enabled)}
+    function setUnlocked(enabled){
+      const msg=enabled?'':'Vault is locked.';
+      [el.search,el.typeFilter,el.reloadEntries,el.createBtn,el.uploadBtn,el.lockButton].forEach(n=>{
+        if(!n)return;n.disabled=!enabled;
+        if(!enabled){n.setAttribute('title',msg);}else{n.removeAttribute('title');}
+      });
+      el.createForm.querySelectorAll('input,textarea,select').forEach(n=>{
+        if(n.id!=='createType'){
+          n.disabled=!enabled;
+          if(!enabled){n.setAttribute('title',msg);}else{n.removeAttribute('title');}
+        }
+      });
+      el.uploadForm.querySelectorAll('input,textarea').forEach(n=>{
+        n.disabled=!enabled;
+        if(!enabled){n.setAttribute('title',msg);}else{n.removeAttribute('title');}
+      });
+    }
 
     function statusUi(){
       if(!s.status.vaultExists){el.badge.textContent='Not Initialized';el.badge.className='badge bad';el.meta.textContent='Create a vault to begin.'}
@@ -981,6 +997,7 @@ input[type="file"]::file-selector-button {
       else{el.badge.textContent='Unlocked';el.badge.className='badge ok';el.meta.textContent='Created: '+dt(s.status.stats?s.status.stats.created:null)}
       el.entryCount.textContent='Entries: '+String(s.status.stats?s.status.stats.entryCount:0);
       el.vaultPath.textContent=s.status.vaultPath||'';
+      el.vaultPath.title=s.status.vaultPath||'';
 
       el.initForm.classList.toggle('hidden', s.status.vaultExists);
       el.unlockForm.classList.toggle('hidden', !s.status.vaultExists || s.status.unlocked);
@@ -1002,8 +1019,8 @@ input[type="file"]::file-selector-button {
         const li=document.createElement('li');
         const b=document.createElement('button');b.type='button';b.className='entry-item';
         if(s.selectedId===en.id){b.classList.add('active');b.setAttribute('aria-current','true');}
-        const t=document.createElement('div');t.className='entry-title';t.textContent=(en.favorite?'★ ':'')+en.title;
-        const m=document.createElement('div');m.className='entry-meta';
+        const t=document.createElement('div');t.className='entry-title';t.textContent=(en.favorite?'★ ':'')+en.title;t.title=(en.favorite?'★ ':'')+en.title;
+        const m=document.createElement('div');m.className='entry-meta';b.setAttribute('aria-label',(en.favorite?'Favorite ':'')+en.title+', '+nt(en.entryType)+' modified '+new Date(en.modified).toLocaleDateString()+(en.category?', '+en.category:''));
         const ty=nt(en.entryType);const p=document.createElement('span');p.className='pill '+ty;p.textContent=ty;
         const d=document.createElement('span');d.textContent=new Date(en.modified).toLocaleDateString();
         m.appendChild(p);
