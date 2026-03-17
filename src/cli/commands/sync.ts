@@ -214,13 +214,20 @@ async function performSync(force?: boolean): Promise<void> {
     // Build local entries map
     const localEntries: Record<string, { entry: Entry; indexEntry: any }> = {};
 
-    for (const indexEntry of entries) {
-      if (indexEntry.entryType === 'password' || !indexEntry.entryType) {
-        const entry = await getEntry(indexEntry.id);
-        if (entry) {
-          localEntries[indexEntry.id] = { entry: entry as Entry, indexEntry };
-        }
-      }
+    // Filter to relevant entries and process in chunks of 20 to avoid N+1 disk I/O bottleneck
+    const entriesToFetch = entries.filter(e => e.entryType === 'password' || !e.entryType);
+    const CHUNK_SIZE = 20;
+
+    for (let i = 0; i < entriesToFetch.length; i += CHUNK_SIZE) {
+      const chunk = entriesToFetch.slice(i, i + CHUNK_SIZE);
+      await Promise.all(
+        chunk.map(async (indexEntry) => {
+          const entry = await getEntry(indexEntry.id);
+          if (entry) {
+            localEntries[indexEntry.id] = { entry: entry as Entry, indexEntry };
+          }
+        })
+      );
     }
 
     spinner.text = 'Fetching remote entries...';
