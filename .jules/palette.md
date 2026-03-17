@@ -1,3 +1,7 @@
 ## 2024-03-11 - Dynamic ARIA State and Focus Management
 **Learning:** In a vanilla JS component setup (like BlankDrive's Web UI), dynamically managing state-based ARIA attributes (`aria-busy` for loading states, `aria-current` for active list items) and explicitly handling focus shifts for modals are critical for maintaining accessibility without a reactive framework.
 **Action:** Ensure that utility functions (like `busy()`) and DOM builders (like `renderEntries()`) intrinsically bind semantic ARIA attributes to visual state changes, and always shift focus into and out of modals explicitly.
+
+## 2024-03-24 - Contextual Tooltips and Consolidated ARIA Labels
+**Learning:** Text truncated via CSS `text-overflow: ellipsis` (like vault paths or entry titles) loses accessibility for sighted users on hover unless explicitly provided via a `title` attribute. Similarly, interactive elements containing multiple distinct text nodes (like list item buttons) cause screen readers to announce disjointed text unless a consolidated `aria-label` is provided on the parent element. Furthermore, disabled buttons should provide context on why they are disabled via a `title` attribute.
+**Action:** Always apply a `title` attribute to elements with CSS text truncation. Provide consolidated `aria-label` strings on complex button structures. Add explanatory `title` attributes when dynamically disabling elements in vanilla DOM updates.
