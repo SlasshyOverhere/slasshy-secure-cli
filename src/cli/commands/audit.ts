@@ -166,17 +166,13 @@ export async function auditCommand(options?: { all?: boolean }): Promise<void> {
     }
 
     // Get full entries with password details
-    // Process in chunks of 20 to avoid N+1 sequential disk I/O bottleneck
     const passwordEntries: Entry[] = [];
-    const CHUNK_SIZE = 20;
-
-    for (let i = 0; i < passwordEntryIds.length; i += CHUNK_SIZE) {
-      const chunk = passwordEntryIds.slice(i, i + CHUNK_SIZE);
-      const chunkResults = await Promise.all(
-        chunk.map(async (e) => await getEntry(e.id))
-      );
-
-      for (const entry of chunkResults) {
+    // Batch fetch entries to prevent N+1 sequential disk I/O bottlenecks
+    const batchSize = 20;
+    for (let i = 0; i < passwordEntryIds.length; i += batchSize) {
+      const batch = passwordEntryIds.slice(i, i + batchSize);
+      const batchEntries = await Promise.all(batch.map((e) => getEntry(e.id)));
+      for (const entry of batchEntries) {
         if (entry && entry.password) {
           passwordEntries.push(entry);
         }

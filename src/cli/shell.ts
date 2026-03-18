@@ -572,14 +572,21 @@ async function executeCommand(cmd: string, args: string[]): Promise<boolean> {
 
             const passwordsToCheck: Array<{ id: string; title: string; password: string }> = [];
 
-            for (const e of passwordEntriesList) {
-              const entry = await getEntry(e.id);
-              if (entry?.password) {
-                passwordsToCheck.push({
-                  id: e.id,
-                  title: e.title,
-                  password: entry.password,
-                });
+            // Batch fetch entries to prevent N+1 sequential disk I/O bottlenecks
+            const batchSize = 20;
+            for (let i = 0; i < passwordEntriesList.length; i += batchSize) {
+              const batch = passwordEntriesList.slice(i, i + batchSize);
+              const batchEntries = await Promise.all(batch.map((e) => getEntry(e.id)));
+              for (let j = 0; j < batch.length; j++) {
+                const entry = batchEntries[j];
+                const e = batch[j]!;
+                if (entry?.password) {
+                  passwordsToCheck.push({
+                    id: e.id,
+                    title: e.title,
+                    password: entry.password,
+                  });
+                }
               }
             }
 

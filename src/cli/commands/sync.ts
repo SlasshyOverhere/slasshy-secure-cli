@@ -214,20 +214,24 @@ async function performSync(force?: boolean): Promise<void> {
     // Build local entries map
     const localEntries: Record<string, { entry: Entry; indexEntry: any }> = {};
 
-    // Filter to relevant entries and process in chunks of 20 to avoid N+1 disk I/O bottleneck
-    const entriesToFetch = entries.filter(e => e.entryType === 'password' || !e.entryType);
-    const CHUNK_SIZE = 20;
+    // Filter relevant entries first
+    const relevantIndexEntries = entries.filter(e => e.entryType === 'password' || !e.entryType);
 
-    for (let i = 0; i < entriesToFetch.length; i += CHUNK_SIZE) {
-      const chunk = entriesToFetch.slice(i, i + CHUNK_SIZE);
-      await Promise.all(
-        chunk.map(async (indexEntry) => {
-          const entry = await getEntry(indexEntry.id);
-          if (entry) {
-            localEntries[indexEntry.id] = { entry: entry as Entry, indexEntry };
-          }
-        })
-      );
+    // Fetch all local entries in parallel in batches to avoid sequential disk I/O bottleneck
+    // Using a batch size of 20 to balance memory/file handles and speed
+    const batchSize = 20;
+    for (let i = 0; i < relevantIndexEntries.length; i += batchSize) {
+      const batch = relevantIndexEntries.slice(i, i + batchSize);
+      const batchResults = await Promise.all(batch.map(async (indexEntry) => {
+        const entry = await getEntry(indexEntry.id);
+        return { indexEntry, entry };
+      }));
+
+      for (const { indexEntry, entry } of batchResults) {
+        if (entry) {
+          localEntries[indexEntry.id] = { entry: entry as Entry, indexEntry };
+        }
+      }
     }
 
     spinner.text = 'Fetching remote entries...';
