@@ -766,11 +766,11 @@ input[type="file"]::file-selector-button {
     <section class="vault-controls">
       <div class="vault-primary">
         <form id="initForm">
-          <input id="initPassword" type="password" autocomplete="new-password" placeholder="New master password" aria-label="New master password" required style="max-width:260px">
+          <input id="initPassword" type="password" autocomplete="new-password" placeholder="New master password *" aria-label="New master password" required style="max-width:260px">
           <button type="submit" class="btn-danger btn-sm">Create Vault</button>
         </form>
         <form id="unlockForm">
-          <input id="unlockPassword" type="password" autocomplete="current-password" placeholder="Master password" aria-label="Master password" required style="max-width:260px">
+          <input id="unlockPassword" type="password" autocomplete="current-password" placeholder="Master password *" aria-label="Master password" required style="max-width:260px">
           <button type="submit" class="btn-primary btn-sm">Unlock</button>
         </form>
         <button id="lockButton" type="button" class="btn-ghost btn-sm">Lock</button>
@@ -805,7 +805,7 @@ input[type="file"]::file-selector-button {
             <p class="hint" style="margin-bottom:12px">Create passwords, secure notes, or upload files.</p>
             <form id="createForm" class="form-stack">
               <select id="createType" aria-label="Entry type"><option value="password">Password Entry</option><option value="note">Secure Note</option></select>
-              <input id="createTitle" type="text" maxlength="256" placeholder="Title" aria-label="Entry title" required>
+              <input id="createTitle" type="text" maxlength="256" placeholder="Title *" aria-label="Entry title" required>
               <div id="createPwd" class="form-stack">
                 <input id="createUsername" type="text" maxlength="256" placeholder="Username (optional)" aria-label="Username">
                 <input id="createPassword" type="text" maxlength="4096" placeholder="Password (optional)" aria-label="Password">
@@ -834,7 +834,7 @@ input[type="file"]::file-selector-button {
         <!-- DETAIL PANEL -->
         <section class="card detail-panel">
           <div class="card-title"><span><span class="icon"></span>Entry Detail</span></div>
-          <p id="detailHint" class="hint">Select an entry to inspect, edit, download, or preview video.</p>
+          <p id="detailHint" class="hint empty-state">Select an entry to inspect, edit, download, or preview video.</p>
           <form id="detailForm" class="form-stack hidden">
             <input id="detailTitle" type="text" maxlength="256" required aria-label="Entry title">
             <p style="display:flex;align-items:center;gap:10px">
@@ -887,7 +887,7 @@ input[type="file"]::file-selector-button {
           <strong id="videoTitle">Video Preview</strong>
           <p class="video-subtitle">Streaming from encrypted vault</p>
         </div>
-        <button id="closeVideo" type="button" class="btn-ghost btn-sm video-close">Close</button>
+        <button id="closeVideo" type="button" class="btn-ghost btn-sm video-close" title="Close (Esc)" aria-label="Close video preview">Close</button>
       </header>
       <video id="videoPlayer" class="video-player" controls preload="metadata"></video>
     </section>
@@ -1016,7 +1016,7 @@ input[type="file"]::file-selector-button {
 
     function renderEntries(){
       el.entryList.innerHTML='';
-      if(!s.status.unlocked){const li=document.createElement('li');li.className='hint';li.textContent='Vault is locked.';el.entryList.appendChild(li);return}
+      if(!s.status.unlocked){const li=document.createElement('li');li.className='hint empty-state';li.textContent='Vault is locked. Unlock to access your entries.';el.entryList.appendChild(li);return}
       if(!s.entries.length){const li=document.createElement('li');li.className='hint empty-state';li.textContent=(s.entryFilters.query||s.entryFilters.type!=='all')?'No entries match your search.':'Vault is empty. Create an entry or upload a file.';el.entryList.appendChild(li);return}
       s.entries.forEach(en=>{
         const li=document.createElement('li');
@@ -1066,7 +1066,7 @@ input[type="file"]::file-selector-button {
     async function onCreate(ev){ev.preventDefault();if(!s.status.unlocked){showToast('Unlock vault first.');return}busy(el.createBtn,true,'Saving…','Save Entry');try{const d=await api('/api/entries',{method:'POST',body:createPayload()});el.createForm.reset();switchCreate();await refreshStatus(false);await refreshEntries();showToast('Entry created.');if(d&&d.entry&&d.entry.id)await loadEntry(d.entry.id)}catch(err){showToast(err instanceof Error?err.message:'Create failed.')}finally{busy(el.createBtn,false,'Saving…','Save Entry')}}
     async function onUpload(ev){ev.preventDefault();if(!s.status.unlocked){showToast('Unlock vault first.');return}const file=el.uploadFile.files&&el.uploadFile.files[0];if(!file){showToast('Choose a file first.');return}busy(el.uploadBtn,true,'Preparing…','Upload File');try{const d=await uploadInChunks(file,String(el.uploadTitle.value||'').trim(),String(el.uploadNotes.value||''));el.uploadForm.reset();await refreshStatus(false);await refreshEntries();showToast('File uploaded ('+formatBytes(file.size)+').');if(d&&d.entry&&d.entry.id)await loadEntry(d.entry.id)}catch(err){showToast(err instanceof Error?err.message:'Upload failed.')}finally{busy(el.uploadBtn,false,'Uploading…','Upload File')}}
     async function onSaveDetail(ev){ev.preventDefault();if(!s.selectedId||!s.selected)return;if(nt(s.selected.type||s.selected.entryType)==='file'){showToast('File metadata is read-only.');return}busy(el.saveDetail,true,'Saving…','Save Changes');try{const d=await api('/api/entries/'+encodeURIComponent(s.selectedId),{method:'PUT',body:updatePayload()});s.selected=d.entry||s.selected;fillDetail(s.selected);await refreshStatus(false);await refreshEntries();showToast('Entry updated.')}catch(err){showToast(err instanceof Error?err.message:'Update failed.')}finally{busy(el.saveDetail,false,'Saving…','Save Changes')}}
-    async function onCopyPassword(){if(!s.selected)return;try{await navigator.clipboard.writeText(String(el.detailPassword.value||''));showToast('Password copied.')}catch(err){showToast('Failed to copy.')}}
+    async function onCopyPassword(){if(!s.selected)return;try{await navigator.clipboard.writeText(String(el.detailPassword.value||''));showToast('Password copied.');const origText=el.copyPassword.textContent;el.copyPassword.textContent='Copied!';setTimeout(()=>el.copyPassword.textContent=origText,2000)}catch(err){showToast('Failed to copy.')}}
     async function onDownload(){if(!s.selectedId||!s.selected||nt(s.selected.type||s.selected.entryType)!=='file'){showToast('Select a file entry first.');return}busy(el.downloadFile,true,'Downloading…','Download');try{const r=await fetch('/api/files/'+encodeURIComponent(s.selectedId)+'/download',{method:'GET',headers:{'X-BlankDrive-UI':'1'}});if(!r.ok){let msg='Download failed ('+r.status+')';try{const p=await r.json();if(p&&p.error)msg=p.error}catch{}throw new Error(msg)}const blob=await r.blob();const fallback=s.selected.originalName||'download.bin';const fileName=parseDownloadName(r.headers.get('content-disposition'),fallback);const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=fileName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);showToast('File download started.')}catch(err){showToast(err instanceof Error?err.message:'Download failed.')}finally{busy(el.downloadFile,false,'Downloading…','Download')}}
     async function onWatchVideo(){if(!s.selectedId||!s.selected||nt(s.selected.type||s.selected.entryType)!=='file'){showToast('Select a file entry first.');return}if(!isVideoEntry(s.selected)){showToast('This file is not recognized as a video.');return}closeVideoPreview();el.videoTitle.textContent=s.selected.originalName||s.selected.title||'Video Preview';el.videoPlayer.src='/api/files/'+encodeURIComponent(s.selectedId)+'/stream?ts='+Date.now();el.videoModal.classList.remove('hidden');el.closeVideo.focus();el.videoPlayer.load();try{await el.videoPlayer.play()}catch{}}
     async function onToggleFav(){if(!s.selectedId)return;busy(el.toggleFav,true,'…','Favorite');try{await api('/api/entries/'+encodeURIComponent(s.selectedId)+'/favorite',{method:'POST'});await refreshEntries();if(s.selectedId)await loadEntry(s.selectedId);showToast('Favorite toggled.')}catch(err){showToast(err instanceof Error?err.message:'Failed.')}finally{busy(el.toggleFav,false,'…','Favorite')}}
