@@ -312,6 +312,14 @@ textarea {
   resize: vertical;
 }
 
+input:disabled,
+textarea:disabled,
+select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: rgba(255, 255, 255, 0.02);
+}
+
 input::placeholder,
 textarea::placeholder {
   color: var(--text-muted);

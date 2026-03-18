@@ -360,14 +360,19 @@ async function listTOTPEntries(): Promise<void> {
     // Get full entries to check for TOTP
     const entriesWithTOTP: Array<{ id: string; title: string; issuer?: string }> = [];
 
-    for (const e of passwordEntries) {
-      const full = await getEntry(e.id);
-      if (full?.totp) {
-        entriesWithTOTP.push({
-          id: full.id,
-          title: full.title,
-          issuer: full.totp.issuer,
-        });
+    // Batch fetch entries to prevent N+1 sequential disk I/O bottlenecks
+    const batchSize = 20;
+    for (let i = 0; i < passwordEntries.length; i += batchSize) {
+      const batch = passwordEntries.slice(i, i + batchSize);
+      const batchEntries = await Promise.all(batch.map((e) => getEntry(e.id)));
+      for (const full of batchEntries) {
+        if (full?.totp) {
+          entriesWithTOTP.push({
+            id: full.id,
+            title: full.title,
+            issuer: full.totp.issuer,
+          });
+        }
       }
     }
 
@@ -456,10 +461,16 @@ async function findPasswordEntry(
       // If requireTOTP, filter to only entries with TOTP
       if (requireTOTP) {
         const entriesWithTOTP: typeof passwordEntries = [];
-        for (const e of passwordEntries) {
-          const full = await getEntry(e.id);
-          if (full?.totp) {
-            entriesWithTOTP.push(e);
+        // Batch fetch entries to prevent N+1 sequential disk I/O bottlenecks
+        const batchSize = 20;
+        for (let i = 0; i < passwordEntries.length; i += batchSize) {
+          const batch = passwordEntries.slice(i, i + batchSize);
+          const batchEntries = await Promise.all(batch.map((e) => getEntry(e.id)));
+          for (let j = 0; j < batch.length; j++) {
+            const full = batchEntries[j];
+            if (full?.totp) {
+              entriesWithTOTP.push(batch[j]!);
+            }
           }
         }
         entriesToShow = entriesWithTOTP;
