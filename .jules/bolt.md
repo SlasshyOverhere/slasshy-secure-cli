@@ -11,3 +11,9 @@
 ## 2024-05-15 - Batched Promise.all Fetching
 **Learning:** Sequential local loop lookups fetching entry values via `await getEntry` cause an N+1 performance bottleneck that drastically impacts commands performing bulk iterations across the file system (e.g. `audit`, `totp`, and `breach` checks in the shell).
 **Action:** Replace sequential iterations of localized file system reads and encryptions with a batched `Promise.all` approach using chunk sizes (e.g., 20) to maintain balanced system memory and limit concurrent file handles while significantly boosting processing speed.
+
+## 2024-06-21 - Resolving N+1 Sequential Disk I/O Bottlenecks
+
+**Learning:** Iterating through vault index entries and sequentially fetching the full entry (e.g. `await getEntry(id)`) causes an N+1 read bottleneck that scales poorly with large vaults. This issue occurred in both `searchEntries` (fetching matches sequentially) and `syncCommand` (fetching the entire vault sequentially).
+
+**Action:** Use `Promise.all()` to fetch full entries in parallel from the index. When handling large subsets of entries, process them in batches (e.g. 20 concurrent tasks) using `Promise.all` over `slice()` bounds to maximize throughput while avoiding file descriptor limits ("too many open files").
