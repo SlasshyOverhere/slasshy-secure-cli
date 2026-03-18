@@ -333,11 +333,15 @@ export async function searchEntries(query: string): Promise<Entry[]> {
     }
   }
 
-  // Fetch all matched entries in parallel to avoid sequential disk I/O bottleneck
-  const entries = await Promise.all(matchIds.map(id => getEntry(id)));
-  for (const entry of entries) {
-    if (entry) {
-      results.push(entry);
+  // Fetch matched entries in parallel batches to avoid sequential disk I/O bottleneck
+  const batchSize = 20;
+  for (let i = 0; i < matchIds.length; i += batchSize) {
+    const batch = matchIds.slice(i, i + batchSize);
+    const entries = await Promise.all(batch.map(id => getEntry(id)));
+    for (const entry of entries) {
+      if (entry) {
+        results.push(entry);
+      }
     }
   }
 
