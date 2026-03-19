@@ -9,3 +9,7 @@
 ## 2024-03-15 - Improving Accessibility for Disabled Elements and Screen Reader Output
 **Learning:** In dynamically constructed interactive elements containing multiple text nodes (like `.entry-item` buttons in BlankDrive's Web UI), screen readers often announce disjointed text. Additionally, when elements are disabled or truncated with CSS (`text-overflow: ellipsis`), users lack context for why they are disabled or what the full text is.
 **Action:** Provide a consolidated string via `aria-label` on parent elements to prevent screen readers from announcing fragmented text. Always supply a `title` attribute for truncated text or disabled interactive elements to explain their state and improve user experience.
+
+## 2025-01-20 - Keyboard Navigation Efficiency for Search
+**Learning:** In data-heavy applications with extensive lists, users often need to quickly jump to the search input. Providing a keyboard shortcut (like `/`) significantly improves keyboard navigation efficiency and reduces friction compared to forcing users to tab through multiple elements or reach for the mouse.
+**Action:** Implement intuitive keyboard shortcuts for primary actions (like search) and provide subtle visual hints (e.g., updating the placeholder to "Search entries… (/)") to teach users the shortcut without overwhelming the UI.
