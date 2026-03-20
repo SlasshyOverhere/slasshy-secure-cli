@@ -791,7 +791,7 @@ input[type="file"]::file-selector-button {
           <button id="reloadEntries" type="button" class="btn-ghost btn-sm">Reload</button>
         </div>
         <div class="filters">
-          <input id="search" type="search" placeholder="Search entries…" aria-label="Search entries">
+          <input id="search" type="search" placeholder="Search entries… (Press /)" aria-label="Search entries (Press / to focus)">
           <select id="typeFilter" aria-label="Filter by type"><option value="all">All</option><option value="password">Passwords</option><option value="note">Notes</option><option value="file">Files</option></select>
         </div>
         <ul id="entryList" class="entry-list"></ul>
@@ -834,7 +834,7 @@ input[type="file"]::file-selector-button {
         <!-- DETAIL PANEL -->
         <section class="card detail-panel">
           <div class="card-title"><span><span class="icon"></span>Entry Detail</span></div>
-          <p id="detailHint" class="hint">Select an entry to inspect, edit, download, or preview video.</p>
+          <p id="detailHint" class="hint" aria-live="polite">Select an entry to inspect, edit, download, or preview video.</p>
           <form id="detailForm" class="form-stack hidden">
             <input id="detailTitle" type="text" maxlength="256" required aria-label="Entry title">
             <p style="display:flex;align-items:center;gap:10px">
@@ -1045,6 +1045,7 @@ input[type="file"]::file-selector-button {
       el.detailMod.textContent='Modified: '+dt(en.modified);
       el.detailTitle.value=en.title||'';el.detailUsername.value=en.username||'';el.detailPassword.value=en.password||'';
       el.detailUrl.value=en.url||'';el.detailCategory.value=en.category||'';el.detailNotes.value=en.notes||'';el.detailContent.value=en.content||'';
+      el.toggleFav.textContent=en.favorite?'Unfavorite':'Favorite';
       const canWatchVideo=ty==='file'&&isVideoEntry(en);
       if(ty==='file'){const parts=[];if(en.originalName)parts.push('Name: '+en.originalName);if(en.mimeType)parts.push('MIME: '+en.mimeType);if(typeof en.size==='number')parts.push('Size: '+en.size+' bytes');if(en.checksum)parts.push('SHA: '+en.checksum);if(en.notes)parts.push('Notes: '+en.notes);if(canWatchVideo)parts.push('Video preview enabled');el.fileInfo.textContent=parts.join(' · ')}
       switchDetail(ty,canWatchVideo);
@@ -1069,7 +1070,7 @@ input[type="file"]::file-selector-button {
     async function onCopyPassword(){if(!s.selected)return;try{await navigator.clipboard.writeText(String(el.detailPassword.value||''));showToast('Password copied.')}catch(err){showToast('Failed to copy.')}}
     async function onDownload(){if(!s.selectedId||!s.selected||nt(s.selected.type||s.selected.entryType)!=='file'){showToast('Select a file entry first.');return}busy(el.downloadFile,true,'Downloading…','Download');try{const r=await fetch('/api/files/'+encodeURIComponent(s.selectedId)+'/download',{method:'GET',headers:{'X-BlankDrive-UI':'1'}});if(!r.ok){let msg='Download failed ('+r.status+')';try{const p=await r.json();if(p&&p.error)msg=p.error}catch{}throw new Error(msg)}const blob=await r.blob();const fallback=s.selected.originalName||'download.bin';const fileName=parseDownloadName(r.headers.get('content-disposition'),fallback);const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=fileName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);showToast('File download started.')}catch(err){showToast(err instanceof Error?err.message:'Download failed.')}finally{busy(el.downloadFile,false,'Downloading…','Download')}}
     async function onWatchVideo(){if(!s.selectedId||!s.selected||nt(s.selected.type||s.selected.entryType)!=='file'){showToast('Select a file entry first.');return}if(!isVideoEntry(s.selected)){showToast('This file is not recognized as a video.');return}closeVideoPreview();el.videoTitle.textContent=s.selected.originalName||s.selected.title||'Video Preview';el.videoPlayer.src='/api/files/'+encodeURIComponent(s.selectedId)+'/stream?ts='+Date.now();el.videoModal.classList.remove('hidden');el.closeVideo.focus();el.videoPlayer.load();try{await el.videoPlayer.play()}catch{}}
-    async function onToggleFav(){if(!s.selectedId)return;busy(el.toggleFav,true,'…','Favorite');try{await api('/api/entries/'+encodeURIComponent(s.selectedId)+'/favorite',{method:'POST'});await refreshEntries();if(s.selectedId)await loadEntry(s.selectedId);showToast('Favorite toggled.')}catch(err){showToast(err instanceof Error?err.message:'Failed.')}finally{busy(el.toggleFav,false,'…','Favorite')}}
+    async function onToggleFav(){if(!s.selectedId)return;const isFav=s.selected&&s.selected.favorite;const initIdleText=isFav?'Unfavorite':'Favorite';busy(el.toggleFav,true,'…',initIdleText);try{await api('/api/entries/'+encodeURIComponent(s.selectedId)+'/favorite',{method:'POST'});await refreshEntries();if(s.selectedId)await loadEntry(s.selectedId);showToast(isFav?'Removed from favorites.':'Added to favorites.')}catch(err){showToast(err instanceof Error?err.message:'Failed.')}finally{const newIsFav=s.selected&&s.selected.favorite;busy(el.toggleFav,false,'…',newIsFav?'Unfavorite':'Favorite')}}
     async function onDelete(){if(!s.selectedId)return;if(!confirm('Delete this entry permanently?'))return;busy(el.deleteEntry,true,'Deleting…','Delete');try{await api('/api/entries/'+encodeURIComponent(s.selectedId),{method:'DELETE'});s.selectedId=null;s.selected=null;showDetail('Entry deleted.');await refreshStatus(false);await refreshEntries();showToast('Entry deleted.')}catch(err){showToast(err instanceof Error?err.message:'Delete failed.')}finally{busy(el.deleteEntry,false,'Deleting…','Delete')}}
     async function onInit(ev){ev.preventDefault();const pw=String(el.initPassword.value||'');if(!pw){showToast('Password required.');return}const b=el.initForm.querySelector('button');busy(b,true,'Creating…','Create Vault');try{await api('/api/init',{method:'POST',body:{password:pw}});el.initForm.reset();await refreshStatus(true);showToast('Vault created!')}catch(err){showToast(err instanceof Error?err.message:'Init failed.')}finally{busy(b,false,'Creating…','Create Vault')}}
     async function onUnlock(ev){ev.preventDefault();const pw=String(el.unlockPassword.value||'');if(!pw){showToast('Password required.');return}const b=el.unlockForm.querySelector('button');busy(b,true,'Unlocking…','Unlock');try{await api('/api/unlock',{method:'POST',body:{password:pw}});el.unlockForm.reset();await refreshStatus(true);showToast('Vault unlocked!')}catch(err){showToast(err instanceof Error?err.message:'Unlock failed.')}finally{busy(b,false,'Unlocking…','Unlock')}}
@@ -1100,6 +1101,7 @@ input[type="file"]::file-selector-button {
     el.closeVideo.addEventListener('click',closeVideoPreview);
     el.videoModal.addEventListener('click',ev=>{if(ev.target===el.videoModal)closeVideoPreview()});
     document.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&!el.videoModal.classList.contains('hidden'))closeVideoPreview()});
+    document.addEventListener('keydown',ev=>{if(ev.key==='/'&&document.activeElement?.tagName!=='INPUT'&&document.activeElement?.tagName!=='TEXTAREA'&&document.activeElement?.tagName!=='SELECT'){ev.preventDefault();el.search.focus()}});
     el.videoPlayer.addEventListener('error',()=>{showToast('Video playback failed. This codec may not be supported here. Try Download.')});
 
     /* ── Init ── */

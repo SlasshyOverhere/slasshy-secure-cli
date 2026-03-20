@@ -9,3 +9,7 @@
 ## 2024-03-15 - Improving Accessibility for Disabled Elements and Screen Reader Output
 **Learning:** In dynamically constructed interactive elements containing multiple text nodes (like `.entry-item` buttons in BlankDrive's Web UI), screen readers often announce disjointed text. Additionally, when elements are disabled or truncated with CSS (`text-overflow: ellipsis`), users lack context for why they are disabled or what the full text is.
 **Action:** Provide a consolidated string via `aria-label` on parent elements to prevent screen readers from announcing fragmented text. Always supply a `title` attribute for truncated text or disabled interactive elements to explain their state and improve user experience.
+
+## 2024-10-24 - Dynamic State Accessibility
+**Learning:** When text content updates dynamically in a single-page app (like an empty state hint changing to "Select an entry..."), it may go unnoticed by screen readers unless specifically marked.
+**Action:** Apply `aria-live="polite"` to status or hint text containers that update without full page reloads.
