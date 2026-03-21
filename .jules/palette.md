@@ -9,3 +9,7 @@
 ## 2024-03-15 - Improving Accessibility for Disabled Elements and Screen Reader Output
 **Learning:** In dynamically constructed interactive elements containing multiple text nodes (like `.entry-item` buttons in BlankDrive's Web UI), screen readers often announce disjointed text. Additionally, when elements are disabled or truncated with CSS (`text-overflow: ellipsis`), users lack context for why they are disabled or what the full text is.
 **Action:** Provide a consolidated string via `aria-label` on parent elements to prevent screen readers from announcing fragmented text. Always supply a `title` attribute for truncated text or disabled interactive elements to explain their state and improve user experience.
+
+## 2024-05-24 - Accessibility and Usability Enhancements
+**Learning:** Adding global keyboard shortcuts like `/` for search requires checking `document.activeElement.tagName` to prevent overriding natural typing in form inputs. Additionally, dynamically updated text elements (like empty state hints) need `aria-live="polite"` so screen readers can announce changes as they happen.
+**Action:** When adding global keyboard shortcuts, always verify the active element before triggering the shortcut. Always apply `aria-live="polite"` to dynamically changing text elements to ensure screen readers provide feedback.
