@@ -791,7 +791,7 @@ input[type="file"]::file-selector-button {
           <button id="reloadEntries" type="button" class="btn-ghost btn-sm">Reload</button>
         </div>
         <div class="filters">
-          <input id="search" type="search" placeholder="Search entries…" aria-label="Search entries">
+          <input id="search" type="search" placeholder="Search (Press '/')" aria-label="Search entries (Press '/')">
           <select id="typeFilter" aria-label="Filter by type"><option value="all">All</option><option value="password">Passwords</option><option value="note">Notes</option><option value="file">Files</option></select>
         </div>
         <ul id="entryList" class="entry-list"></ul>
@@ -834,7 +834,7 @@ input[type="file"]::file-selector-button {
         <!-- DETAIL PANEL -->
         <section class="card detail-panel">
           <div class="card-title"><span><span class="icon"></span>Entry Detail</span></div>
-          <p id="detailHint" class="hint">Select an entry to inspect, edit, download, or preview video.</p>
+          <p id="detailHint" class="hint" aria-live="polite">Select an entry to inspect, edit, download, or preview video.</p>
           <form id="detailForm" class="form-stack hidden">
             <input id="detailTitle" type="text" maxlength="256" required aria-label="Entry title">
             <p style="display:flex;align-items:center;gap:10px">
@@ -874,7 +874,7 @@ input[type="file"]::file-selector-button {
               <button id="cliQuickSettings" type="button" class="btn-ghost">settings</button>
             </div>
           </form>
-          <pre id="cliOutput" class="hint cli-output">CLI output will appear here.</pre>
+          <pre id="cliOutput" class="hint cli-output" aria-live="polite">CLI output will appear here.</pre>
         </section>
       </div>
     </section>
@@ -1099,7 +1099,13 @@ input[type="file"]::file-selector-button {
     el.cliQuickSettings.addEventListener('click',()=>{el.cliCommand.value='settings';void runCliCommandFromUi('settings')});
     el.closeVideo.addEventListener('click',closeVideoPreview);
     el.videoModal.addEventListener('click',ev=>{if(ev.target===el.videoModal)closeVideoPreview()});
-    document.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&!el.videoModal.classList.contains('hidden'))closeVideoPreview()});
+    document.addEventListener('keydown',ev=>{
+      if(ev.key==='Escape'&&!el.videoModal.classList.contains('hidden'))closeVideoPreview();
+      if(ev.key==='/'&&document.activeElement?.tagName!=='INPUT'&&document.activeElement?.tagName!=='TEXTAREA'&&document.activeElement?.tagName!=='SELECT'){
+        ev.preventDefault();
+        if(!el.search.disabled)el.search.focus();
+      }
+    });
     el.videoPlayer.addEventListener('error',()=>{showToast('Video playback failed. This codec may not be supported here. Try Download.')});
 
     /* ── Init ── */
