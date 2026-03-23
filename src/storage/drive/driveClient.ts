@@ -892,17 +892,26 @@ async function getPublicRootFolderId(): Promise<string> {
       pageSize: 1000,
     });
 
-    for (const child of response.data.files || []) {
-      if (!child.id) {
-        continue;
-      }
+    // ⚡ Bolt: Prevent N+1 sequential network I/O bottlenecks when moving multiple children.
+    // Execute updates concurrently in batches to improve performance without exhausting network handles.
+    const files = response.data.files || [];
+    const batchSize = 5;
+    for (let i = 0; i < files.length; i += batchSize) {
+      const batch = files.slice(i, i + batchSize);
+      await Promise.all(
+        batch.map(async (child) => {
+          if (!child.id) {
+            return;
+          }
 
-      await drive.files.update({
-        fileId: child.id,
-        addParents: targetFolderId,
-        removeParents: sourceFolderId,
-        fields: 'id',
-      });
+          await drive.files.update({
+            fileId: child.id,
+            addParents: targetFolderId,
+            removeParents: sourceFolderId,
+            fields: 'id',
+          });
+        })
+      );
     }
   };
 

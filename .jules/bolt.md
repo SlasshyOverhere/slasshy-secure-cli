@@ -23,3 +23,7 @@
 **Learning:** Iterating through vault index entries and sequentially fetching the full entry (e.g. `await getEntry(id)`) causes an N+1 read bottleneck that scales poorly with large vaults. This issue occurred in both `searchEntries` (fetching matches sequentially) and `syncCommand` (fetching the entire vault sequentially).
 
 **Action:** Use `Promise.all()` to fetch full entries in parallel from the index. When handling large subsets of entries, process them in batches (e.g. 20 concurrent tasks) using `Promise.all` over `slice()` bounds to maximize throughput while avoiding file descriptor limits ("too many open files").
+
+## 2024-06-25 - Batched Promise Execution for Drive Folder Restructuring
+**Learning:** Moving Google Drive folder children individually inside a `for...of` loop (e.g., during `moveFolderChildren` in `driveClient.ts`) introduces an N+1 sequential network I/O bottleneck that drastically delays startup when cleaning up duplicate folders.
+**Action:** Use the `runParallel` utility from `fileSyncService.ts` along with `PARALLEL_LIMIT` to process Drive API file updates concurrently, significantly reducing resolution time for large folders.
