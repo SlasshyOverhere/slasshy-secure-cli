@@ -9,7 +9,3 @@
 ## 2024-03-15 - Improving Accessibility for Disabled Elements and Screen Reader Output
 **Learning:** In dynamically constructed interactive elements containing multiple text nodes (like `.entry-item` buttons in BlankDrive's Web UI), screen readers often announce disjointed text. Additionally, when elements are disabled or truncated with CSS (`text-overflow: ellipsis`), users lack context for why they are disabled or what the full text is.
 **Action:** Provide a consolidated string via `aria-label` on parent elements to prevent screen readers from announcing fragmented text. Always supply a `title` attribute for truncated text or disabled interactive elements to explain their state and improve user experience.
-
-## 2024-03-24 - Search Focus Keyboard Shortcut
-**Learning:** When adding single-key global keyboard shortcuts (like `/` for search) in a vanilla JS application, it is crucial to verify the active element before triggering the action to prevent interfering with normal typing. In `src/webui/template.ts`, the `document.activeElement.tagName` should be checked to ensure it is not an `INPUT`, `TEXTAREA`, or `SELECT` element.
-**Action:** Before calling `focus()` on an element due to a global keyboard shortcut, ensure `ev.preventDefault()` is invoked and the currently focused element is not an interactive input field where the key might be legitimately typed. Also verify the target element is not disabled.
