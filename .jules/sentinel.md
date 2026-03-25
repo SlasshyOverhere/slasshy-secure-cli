@@ -7,3 +7,8 @@
 **Vulnerability:** The Web UI's `/api/cli/run` endpoint allowed execution of the highly destructive `destruct` command. Even if authenticated locally, this exposes a severe risk of data wiping (both local and cloud) through the browser interface, bypassing intended CLI-only interactions (like prompts and warnings).
 **Learning:** Exposing CLI commands directly to a web interface requires a strict allow-list or a comprehensive deny-list of commands that are interactive, destructive, or recursive (like `web` or `destruct`). Dangerous commands should be explicitly blocked from HTTP endpoints.
 **Prevention:** Always maintain and review `BLOCKED_WEB_CLI_COMMANDS` or a similar mechanism when adding new CLI features to ensure that administrative or destructive commands cannot be triggered remotely or via XSRF/CSRF from the web interface.
+
+## 2024-05-18 - Prevent Command Injection in PowerShell Scripts Executed via Node
+**Vulnerability:** Constructing a PowerShell script using string interpolation (e.g., dynamically injecting file paths) and running it via `exec` introduces a severe risk of command injection. A maliciously crafted path could escape the quotes and execute arbitrary commands.
+**Learning:** Never interpolate dynamic variables directly into shell commands or scripts. This is true for bash, PowerShell, and any other sub-shell environments executed from Node.js.
+**Prevention:** Pass dynamic data securely through environment variables when running scripts or shells via Node.js `exec` or `spawn` (e.g., passing `{ env: { ...process.env, VAR_NAME: value } }` and reading `$env:VAR_NAME` within the script).
