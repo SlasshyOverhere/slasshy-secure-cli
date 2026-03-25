@@ -37,6 +37,7 @@ import { displayAuditLog } from './auditLog.js';
 import { isDuressConfigured, interactiveSetupDuress, disableDuressPassword, isInDuressMode } from './duress.js';
 import { getIndexKey } from '../crypto/index.js';
 import { isUnlocked as checkVaultUnlocked, getEntry, listEntries, type Entry } from '../storage/vault/index.js';
+import { runParallel, PARALLEL_LIMIT } from '../storage/drive/index.js';
 import { checkPasswordBreach, displayBreachResult, getBreachDisplay, formatBreachCount, type BreachCheckResult } from './breachCheck.js';
 import { interactiveSetup2FA, showVault2FAHelp } from './vault2fa.js';
 import { isVault2FAEnabled, getVault2FAConfig, setVault2FAConfig, type Vault2FAConfig } from '../storage/vault/index.js';
@@ -603,24 +604,24 @@ async function executeCommand(cmd: string, args: string[]): Promise<boolean> {
             const errorEntries: string[] = [];
 
             let checked = 0;
-            for (const entry of passwordsToCheck) {
-              const result = await checkPasswordBreach(entry.password);
-              checked++;
-              spinner.text = `Checking ${checked}/${passwordsToCheck.length} passwords...`;
+            const checkTasks = passwordsToCheck.map(entry => {
+              return async () => {
+                const result = await checkPasswordBreach(entry.password);
+                checked++;
+                spinner.text = `Checking ${checked}/${passwordsToCheck.length} passwords...`;
 
-              if (result.error) {
-                errorEntries.push(entry.title);
-              } else if (result.breached) {
-                breachedEntries.push({ title: entry.title, count: result.count });
-              } else {
-                safeEntries.push(entry.title);
-              }
+                if (result.error) {
+                  errorEntries.push(entry.title);
+                } else if (result.breached) {
+                  breachedEntries.push({ title: entry.title, count: result.count });
+                } else {
+                  safeEntries.push(entry.title);
+                }
+              };
+            });
 
-              // Delay to avoid rate limiting
-              if (checked < passwordsToCheck.length) {
-                await new Promise(resolve => setTimeout(resolve, 200));
-              }
-            }
+            // Perform network-bound breach checks in parallel
+            await runParallel(checkTasks, PARALLEL_LIMIT);
 
             spinner.stop();
 

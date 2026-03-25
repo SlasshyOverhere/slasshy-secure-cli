@@ -23,3 +23,7 @@
 **Learning:** Iterating through vault index entries and sequentially fetching the full entry (e.g. `await getEntry(id)`) causes an N+1 read bottleneck that scales poorly with large vaults. This issue occurred in both `searchEntries` (fetching matches sequentially) and `syncCommand` (fetching the entire vault sequentially).
 
 **Action:** Use `Promise.all()` to fetch full entries in parallel from the index. When handling large subsets of entries, process them in batches (e.g. 20 concurrent tasks) using `Promise.all` over `slice()` bounds to maximize throughput while avoiding file descriptor limits ("too many open files").
+
+## 2026-03-25 - Rate-Limited APIs and Parallelization
+**Learning:** The `checkPasswordBreach` feature deliberately iterates sequentially and implements a delay to avoid rate limiting from the Have I Been Pwned API. Attempting to parallelize it with `runParallel` or `Promise.all` triggers 429 Too Many Requests errors and breaks the functionality.
+**Action:** Never parallelize external API requests to rate-limited services unless explicitly handled with queuing mechanisms. Retain the sequential `for...of` loop and deliberate delays for such operations.
