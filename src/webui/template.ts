@@ -791,10 +791,10 @@ input[type="file"]::file-selector-button {
           <button id="reloadEntries" type="button" class="btn-ghost btn-sm">Reload</button>
         </div>
         <div class="filters">
-          <input id="search" type="search" placeholder="Search entries…" aria-label="Search entries">
+          <input id="search" type="search" placeholder="Search (/)" aria-label="Search entries (Press / to focus)">
           <select id="typeFilter" aria-label="Filter by type"><option value="all">All</option><option value="password">Passwords</option><option value="note">Notes</option><option value="file">Files</option></select>
         </div>
-        <ul id="entryList" class="entry-list"></ul>
+        <ul id="entryList" class="entry-list" aria-live="polite"></ul>
       </aside>
 
       <div class="workspace">
@@ -834,7 +834,7 @@ input[type="file"]::file-selector-button {
         <!-- DETAIL PANEL -->
         <section class="card detail-panel">
           <div class="card-title"><span><span class="icon"></span>Entry Detail</span></div>
-          <p id="detailHint" class="hint">Select an entry to inspect, edit, download, or preview video.</p>
+          <p id="detailHint" class="hint" aria-live="polite">Select an entry to inspect, edit, download, or preview video.</p>
           <form id="detailForm" class="form-stack hidden">
             <input id="detailTitle" type="text" maxlength="256" required aria-label="Entry title">
             <p style="display:flex;align-items:center;gap:10px">
@@ -1099,7 +1099,13 @@ input[type="file"]::file-selector-button {
     el.cliQuickSettings.addEventListener('click',()=>{el.cliCommand.value='settings';void runCliCommandFromUi('settings')});
     el.closeVideo.addEventListener('click',closeVideoPreview);
     el.videoModal.addEventListener('click',ev=>{if(ev.target===el.videoModal)closeVideoPreview()});
-    document.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&!el.videoModal.classList.contains('hidden'))closeVideoPreview()});
+    document.addEventListener('keydown',ev=>{
+      if(ev.key==='Escape'&&!el.videoModal.classList.contains('hidden'))closeVideoPreview();
+      if(ev.key==='/'&&(!document.activeElement||!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName))){
+        ev.preventDefault();
+        if(!el.search.disabled&&!el.search.classList.contains('hidden'))el.search.focus();
+      }
+    });
     el.videoPlayer.addEventListener('error',()=>{showToast('Video playback failed. This codec may not be supported here. Try Download.')});
 
     /* ── Init ── */

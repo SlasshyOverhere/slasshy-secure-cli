@@ -9,3 +9,7 @@
 ## 2024-03-15 - Improving Accessibility for Disabled Elements and Screen Reader Output
 **Learning:** In dynamically constructed interactive elements containing multiple text nodes (like `.entry-item` buttons in BlankDrive's Web UI), screen readers often announce disjointed text. Additionally, when elements are disabled or truncated with CSS (`text-overflow: ellipsis`), users lack context for why they are disabled or what the full text is.
 **Action:** Provide a consolidated string via `aria-label` on parent elements to prevent screen readers from announcing fragmented text. Always supply a `title` attribute for truncated text or disabled interactive elements to explain their state and improve user experience.
+
+## 2024-03-22 - Global Keyboard Shortcuts and Discoverability
+**Learning:** Adding single-key global keyboard shortcuts (like `/` for search) improves efficiency but requires careful state checks to avoid input-stealing if the user is already focused on an input element. Furthermore, a hidden shortcut is an inaccessible one.
+**Action:** When adding global shortcuts, check `document.activeElement.tagName` to skip inputs, textareas, and selects. Make the shortcut discoverable by adding a visual hint to the input's placeholder (e.g. `(/)`) and updating its `aria-label` (e.g. `Press / to focus`) to ensure both sighted users and screen readers are aware of it.
