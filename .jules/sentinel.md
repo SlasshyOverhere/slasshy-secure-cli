@@ -7,3 +7,7 @@
 **Vulnerability:** The Web UI's `/api/cli/run` endpoint allowed execution of the highly destructive `destruct` command. Even if authenticated locally, this exposes a severe risk of data wiping (both local and cloud) through the browser interface, bypassing intended CLI-only interactions (like prompts and warnings).
 **Learning:** Exposing CLI commands directly to a web interface requires a strict allow-list or a comprehensive deny-list of commands that are interactive, destructive, or recursive (like `web` or `destruct`). Dangerous commands should be explicitly blocked from HTTP endpoints.
 **Prevention:** Always maintain and review `BLOCKED_WEB_CLI_COMMANDS` or a similar mechanism when adding new CLI features to ensure that administrative or destructive commands cannot be triggered remotely or via XSRF/CSRF from the web interface.
+## 2024-05-30 - Command Injection in PowerShell scripts
+**Vulnerability:** PowerShell scripts were being dynamically generated using string interpolation of user-controlled variables (e.g., file paths).
+**Learning:** This introduces a command injection risk where crafted filenames or paths could execute arbitrary PowerShell commands when the script runs via `execAsync`.
+**Prevention:** Always pass variables to PowerShell scripts using environment variables (e.g., via the `env` options object in `execAsync`) and reference them safely within the script using `$env:VAR_NAME`.

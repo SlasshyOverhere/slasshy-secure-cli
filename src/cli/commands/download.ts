@@ -51,13 +51,14 @@ $f.Description = 'Select download folder'
 $f.ShowNewFolderButton = $true
 $result = $f.ShowDialog()
 if ($result -eq 'OK') {
-  [System.IO.File]::WriteAllText('${tempFile.replace(/\\/g, '\\\\')}', $f.SelectedPath, [System.Text.Encoding]::UTF8)
+  [System.IO.File]::WriteAllText($env:SLASSHY_TEMP_FILE, $f.SelectedPath, [System.Text.Encoding]::UTF8)
 }
 `.trim().replace(/\r?\n/g, '; ');
 
     await execAsync(`powershell -NoProfile -Command "${psScript}"`, {
       windowsHide: false,
       timeout: 120000,
+      env: { ...process.env, SLASSHY_TEMP_FILE: tempFile },
     });
 
     // Read the path from temp file
