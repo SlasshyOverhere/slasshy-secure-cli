@@ -51,13 +51,14 @@ $f.Filter = 'All Files (*.*)|*.*'
 $f.Multiselect = $false
 $result = $f.ShowDialog()
 if ($result -eq 'OK') {
-  [System.IO.File]::WriteAllText('${tempFile.replace(/\\/g, '\\\\')}', $f.FileName, [System.Text.Encoding]::UTF8)
+  [System.IO.File]::WriteAllText($env:TEMP_FILE, $f.FileName, [System.Text.Encoding]::UTF8)
 }
 `.trim().replace(/\r?\n/g, '; ');
 
     await execAsync(`powershell -NoProfile -Command "${psScript}"`, {
       windowsHide: false,
       timeout: 120000,
+      env: { ...process.env, TEMP_FILE: tempFile }
     });
 
     // Read the path from temp file
