@@ -17,6 +17,9 @@ import chalk from 'chalk';
 
 const HIBP_API_URL = 'https://api.pwnedpasswords.com/range/';
 
+// In-memory cache to prevent duplicate network requests for identical hash prefixes
+const hibpCache = new Map<string, string>();
+
 /**
  * Result of a breach check
  */
@@ -88,8 +91,14 @@ export async function checkPasswordBreach(password: string): Promise<BreachCheck
     const prefix = hash.substring(0, 5);
     const suffix = hash.substring(5);
 
-    // Fetch matching hashes from HIBP
-    const response = await fetchHIBP(prefix);
+    // Check cache first to avoid redundant API requests
+    let response = hibpCache.get(prefix);
+
+    if (!response) {
+      // Fetch matching hashes from HIBP
+      response = await fetchHIBP(prefix);
+      hibpCache.set(prefix, response);
+    }
 
     // Parse response (format: SUFFIX:COUNT\r\n)
     const lines = response.split('\r\n');
