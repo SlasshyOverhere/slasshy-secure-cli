@@ -47,7 +47,7 @@ const MAX_UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024;
 const MAX_UPLOAD_SESSION_AGE_MS = 60 * 60 * 1000;
 const CLI_RUN_TIMEOUT_MS = 120_000;
 const CLI_RUN_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
-const BLOCKED_WEB_CLI_COMMANDS = new Set(['web', 'ui', 'destruct']);
+const BLOCKED_WEB_CLI_COMMANDS = new Set(['web', 'ui', 'destruct', 'init', 'auth', 'delete']);
 const BRAND_LOGO_CANDIDATES = [
   path.join(process.cwd(), 'assets', 'blankdrive-logo.png'),
   path.join(process.cwd(), 'desktop-application', 'src-tauri', 'icons', 'blankdrive.png'),
