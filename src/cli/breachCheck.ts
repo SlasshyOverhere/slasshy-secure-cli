@@ -17,6 +17,9 @@ import chalk from 'chalk';
 
 const HIBP_API_URL = 'https://api.pwnedpasswords.com/range/';
 
+// Cache for HIBP responses to prevent duplicate network requests
+const hibpCache = new Map<string, string>();
+
 /**
  * Result of a breach check
  */
@@ -37,6 +40,10 @@ function sha1Hash(password: string): string {
  * Make HTTPS request to HIBP API
  */
 async function fetchHIBP(hashPrefix: string): Promise<string> {
+  if (hibpCache.has(hashPrefix)) {
+    return hibpCache.get(hashPrefix)!;
+  }
+
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'api.pwnedpasswords.com',
@@ -57,6 +64,7 @@ async function fetchHIBP(hashPrefix: string): Promise<string> {
 
       res.on('end', () => {
         if (res.statusCode === 200) {
+          hibpCache.set(hashPrefix, data);
           resolve(data);
         } else {
           reject(new Error(`HIBP API returned status ${res.statusCode}`));
