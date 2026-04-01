@@ -6,15 +6,20 @@
 
 Client-side, zero-knowledge vault for passwords, notes, TOTP secrets, and encrypted files synced to Google Drive.
 
-Current release: `0.1.4`
+Current release: `0.1.5`
 Release notes: see `CHANGELOG.md`
 
-## What's New In 0.1.4
+## What's New In 0.1.5
 
-- Fixed the packaged desktop app so the installed launcher ships its own backend runtime, production dependencies, and bundled Node executable.
-- Added safer Web UI unlock brute-force protection with reset-on-success behavior and test coverage.
-- Improved Web UI keyboard accessibility so focused active entry rows keep a visible focus ring.
-- Parallelized cloud chunk deletions with bounded concurrency and deterministic error reporting.
+- Blocked `init`, `auth`, and `delete` CLI commands from the Web UI endpoint to prevent vault wipe/overwrite via browser.
+- Internal unlock errors now return a generic 500 instead of leaking stack traces or internal state.
+- PowerShell file-picker commands now pass temp-file paths via environment variable instead of string interpolation, eliminating command-injection risk.
+- Added in-memory cache for Have I Been Pwned API calls, eliminating duplicate network requests during bulk audits.
+- Google Drive folder-move operations now batch child-file updates in parallel (5 at a time) instead of sequentially.
+- Web UI empty and locked states now use the `empty-state` class with clearer messaging.
+- Copy Password button briefly shows "Copied!" confirmation before reverting.
+- Required password and title fields now show a `*` placeholder hint.
+- Video preview close button now has `title` and `aria-label` for screen reader context.
 
 ## CLI Use Case Demo
 

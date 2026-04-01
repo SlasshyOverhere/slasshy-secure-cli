@@ -6,6 +6,28 @@ All notable changes to this project will be documented in this file.
 
 - No unreleased entries yet.
 
+## [0.1.5] - 2026-04-01
+
+### Security
+
+- Blocked `init`, `auth`, and `delete` CLI commands from the Web UI `/api/cli/run` endpoint to prevent vault wipe or overwrite through the browser interface without interactive confirmation.
+- Internal unlock failures (disk errors, etc.) now return a generic `500 Internal Server Error` instead of re-throwing arbitrary errors that could leak stack traces or internal state.
+- PowerShell file-picker commands in `upload` and `download` now pass the temp-file path via an environment variable (`TEMP_FILE`) instead of string interpolation, eliminating command-injection risk on Windows.
+
+### Added
+
+- In-memory cache for Have I Been Pwned (HIBP) API responses in `checkPasswordBreach`, eliminating duplicate network round-trips when auditing passwords that share a SHA-1 hash prefix.
+
+### Improved
+
+- Google Drive folder-move operations now batch child-file updates five at a time using `Promise.all` instead of awaiting each request sequentially, significantly reducing latency when consolidating large folders.
+- Web UI locked sidebar message now uses the `empty-state` class with clearer text ("Vault is locked. Unlock to access your entries.").
+- Web UI detail panel idle hint now uses the `empty-state` class for visual consistency.
+- Copy Password button briefly shows "Copied!" for 2 seconds after a successful copy before reverting to the original label.
+- Required password and title input placeholders now include a `*` indicator.
+- Video preview close button now has a `title="Close (Esc)"` tooltip and `aria-label="Close video preview"` for screen reader users.
+
+
 ## [0.1.4] - 2026-03-12
 
 ### Fixed

@@ -1,6 +1,6 @@
 {
   "name": "blankdrive",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Military-grade secure storage with steganography & Google Drive sync",
   "main": "dist/index.js",
   "bin": {
