@@ -23,3 +23,7 @@
 **Learning:** Iterating through vault index entries and sequentially fetching the full entry (e.g. `await getEntry(id)`) causes an N+1 read bottleneck that scales poorly with large vaults. This issue occurred in both `searchEntries` (fetching matches sequentially) and `syncCommand` (fetching the entire vault sequentially).
 
 **Action:** Use `Promise.all()` to fetch full entries in parallel from the index. When handling large subsets of entries, process them in batches (e.g. 20 concurrent tasks) using `Promise.all` over `slice()` bounds to maximize throughput while avoiding file descriptor limits ("too many open files").
+
+## 2024-05-25 - Parallelizing Network I/O in Low-Level Clients
+**Learning:** Sequential network I/O in arrays creates significant bottlenecks. However, when working in low-level client files like `src/storage/drive/driveClient.ts`, importing higher-level parallelization utilities (like `runParallel` from `fileSyncService.ts`) creates inverted/circular dependencies that complicate architecture.
+**Action:** When parallelizing network requests in foundational client modules, avoid external imports. Instead, implement inline chunked batching (e.g., using `Promise.all` over chunks of 5-20) to maintain high throughput while strictly preserving module dependency boundaries.

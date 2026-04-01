@@ -139,7 +139,7 @@ describe('Web UI unlock rate limiting', () => {
     });
   });
 
-  it('keeps internal unlock failures on the generic 500 path', async () => {
+  it('keeps internal unlock failures on the generic 500 path to prevent info leak', async () => {
     vaultMocks.unlock.mockRejectedValue(new Error('disk failure'));
 
     const response = await requestJson('/api/unlock', { password: 'correct-password' });
