@@ -6,13 +6,10 @@
 
 Client-side, zero-knowledge vault for passwords, notes, TOTP secrets, and encrypted files synced to Google Drive.
 
-> Note
-> BlankDrive Desktop is currently having an issue. A fix will be released shortly.
-
-Current release: `0.1.3`
+Current release: `0.1.4`
 Release notes: see `CHANGELOG.md`
 
-## What's New In 0.1.3
+## What's New In 0.1.4
 
 - Fixed the packaged desktop app so the installed launcher ships its own backend runtime, production dependencies, and bundled Node executable.
 - Added safer Web UI unlock brute-force protection with reset-on-success behavior and test coverage.
