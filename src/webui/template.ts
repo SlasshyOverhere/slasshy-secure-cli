@@ -836,7 +836,7 @@ input[type="file"]::file-selector-button {
           <div class="card-title"><span><span class="icon"></span>Entry Detail</span></div>
           <p id="detailHint" class="hint empty-state">Select an entry to inspect, edit, download, or preview video.</p>
           <form id="detailForm" class="form-stack hidden">
-            <input id="detailTitle" type="text" maxlength="256" required aria-label="Entry title">
+            <input id="detailTitle" type="text" maxlength="256" placeholder="Title *" required aria-label="Entry title">
             <p style="display:flex;align-items:center;gap:10px">
               <span id="detailType" class="pill password">password</span>
               <span id="detailMod" class="meta-text" style="font-size:.78rem"></span>
@@ -1017,7 +1017,23 @@ input[type="file"]::file-selector-button {
     function renderEntries(){
       el.entryList.innerHTML='';
       if(!s.status.unlocked){const li=document.createElement('li');li.className='hint empty-state';li.textContent='Vault is locked. Unlock to access your entries.';el.entryList.appendChild(li);return}
-      if(!s.entries.length){const li=document.createElement('li');li.className='hint empty-state';li.textContent=(s.entryFilters.query||s.entryFilters.type!=='all')?'No entries match your search.':'Vault is empty. Create an entry or upload a file.';el.entryList.appendChild(li);return}
+      if(!s.entries.length){
+        const li=document.createElement('li');li.className='hint empty-state';
+        if(s.entryFilters.query||s.entryFilters.type!=='all'){
+          li.textContent='No entries match your search. ';
+          const btn=document.createElement('button');
+          btn.className='btn-ghost btn-sm';
+          btn.textContent='Clear Filters';
+          btn.style.marginTop='10px';
+          btn.onclick=()=>{el.search.value='';el.typeFilter.value='all';void refreshEntries()};
+          const div=document.createElement('div');
+          div.appendChild(btn);
+          li.appendChild(div);
+        } else {
+          li.textContent='Vault is empty. Create an entry or upload a file.';
+        }
+        el.entryList.appendChild(li);return
+      }
       s.entries.forEach(en=>{
         const li=document.createElement('li');
         const b=document.createElement('button');b.type='button';b.className='entry-item';
@@ -1079,6 +1095,7 @@ input[type="file"]::file-selector-button {
     /* ── Bind ── */
     el.createType.addEventListener('change',switchCreate);
     el.search.addEventListener('input',()=>{if(searchTimer)clearTimeout(searchTimer);searchTimer=setTimeout(()=>{void refreshEntries()},200)});
+    el.search.addEventListener('keydown',ev=>{if(ev.key==='Escape'){el.search.value='';el.search.blur();void refreshEntries()}});
     el.typeFilter.addEventListener('change',()=>{void refreshEntries()});
     el.refreshButton.addEventListener('click',async ()=>{busy(el.refreshButton,true,'Refreshing…','Refresh');await refreshStatus(true);busy(el.refreshButton,false,'Refreshing…','Refresh')});
     el.reloadEntries.addEventListener('click',async ()=>{busy(el.reloadEntries,true,'Reloading…','Reload');await refreshEntries();busy(el.reloadEntries,false,'Reloading…','Reload')});
