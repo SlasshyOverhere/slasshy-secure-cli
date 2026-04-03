@@ -1079,6 +1079,7 @@ input[type="file"]::file-selector-button {
     /* ── Bind ── */
     el.createType.addEventListener('change',switchCreate);
     el.search.addEventListener('input',()=>{if(searchTimer)clearTimeout(searchTimer);searchTimer=setTimeout(()=>{void refreshEntries()},200)});
+    el.search.addEventListener('keydown',ev=>{if(ev.key==='Escape'){ev.preventDefault();el.search.value='';el.search.blur();void refreshEntries();}});
     el.typeFilter.addEventListener('change',()=>{void refreshEntries()});
     el.refreshButton.addEventListener('click',async ()=>{busy(el.refreshButton,true,'Refreshing…','Refresh');await refreshStatus(true);busy(el.refreshButton,false,'Refreshing…','Refresh')});
     el.reloadEntries.addEventListener('click',async ()=>{busy(el.reloadEntries,true,'Reloading…','Reload');await refreshEntries();busy(el.reloadEntries,false,'Reloading…','Reload')});
