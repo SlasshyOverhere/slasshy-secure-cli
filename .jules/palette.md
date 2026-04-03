@@ -17,3 +17,7 @@
 ## 2024-03-18 - Empty State Feedback & Contextual Clarity
 **Learning:** Adding subtle feedback indicators (like inline "Copied!" text that reverts after a delay) and clearly demarcating empty states (using an `empty-state` CSS class for empty and locked screens) drastically reduces uncertainty. Similarly, marking required fields with `*` and defining standard ARIA labels and titles for context-less icons (like a video close button) are minimal enhancements that compound into a significant accessibility and usability improvement without fundamentally changing the design.
 **Action:** When working on UI template files, look for implicit states (like locked, empty, or async completion) and verify if the design system provides classes (like `empty-state`) that should be explicitly applied. Additionally, always look for icon-only buttons or required inputs that lack contextual cues (`title`, `aria-label`, or standard placeholders).
+
+## 2024-03-21 - Escape Key to Clear Search Context
+**Learning:** Implementing an `Escape` key listener to clear input fields like search boxes drastically improves keyboard navigability, but the interaction must comprehensively handle clearing the value, blurring the focus, and resetting the underlying data model view.
+**Action:** When adding `Escape` shortcut interactions to inputs, always ensure the event is captured specifically on that input via `keydown`, prevents default behavior, unfocuses the element via `blur()`, and explicitly triggers any necessary state refreshes (e.g., `refreshEntries()`).
