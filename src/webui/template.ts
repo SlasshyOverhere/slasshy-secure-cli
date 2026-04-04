@@ -1100,7 +1100,15 @@ input[type="file"]::file-selector-button {
     el.closeVideo.addEventListener('click',closeVideoPreview);
     el.videoModal.addEventListener('click',ev=>{if(ev.target===el.videoModal)closeVideoPreview()});
     document.addEventListener('keydown',ev=>{
-      if(ev.key==='Escape'&&!el.videoModal.classList.contains('hidden'))closeVideoPreview();
+      if(ev.key==='Escape'){
+        if(!el.videoModal.classList.contains('hidden')){
+          closeVideoPreview();
+        } else if (document.activeElement === el.search) {
+          el.search.value = '';
+          el.search.blur();
+          void refreshEntries();
+        }
+      }
       if(ev.key==='/'&&!el.search.disabled){
         const tn=document.activeElement?.tagName;
         if(tn!=='INPUT'&&tn!=='TEXTAREA'&&tn!=='SELECT'){
