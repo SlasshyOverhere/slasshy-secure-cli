@@ -27,6 +27,7 @@ export interface BreachCheckResult {
   breached: boolean;
   count: number; // Number of times seen in breaches (0 if not breached)
   error?: string;
+  networkRequestSkipped?: boolean; // True if the check was skipped due to a cache hit
 }
 
 /**
@@ -39,9 +40,9 @@ function sha1Hash(password: string): string {
 /**
  * Make HTTPS request to HIBP API
  */
-async function fetchHIBP(hashPrefix: string): Promise<string> {
+async function fetchHIBP(hashPrefix: string): Promise<{ data: string; cached: boolean }> {
   if (hibpCache.has(hashPrefix)) {
-    return hibpCache.get(hashPrefix)!;
+    return { data: hibpCache.get(hashPrefix)!, cached: true };
   }
 
   return new Promise((resolve, reject) => {
@@ -65,7 +66,7 @@ async function fetchHIBP(hashPrefix: string): Promise<string> {
       res.on('end', () => {
         if (res.statusCode === 200) {
           hibpCache.set(hashPrefix, data);
-          resolve(data);
+          resolve({ data, cached: false });
         } else {
           reject(new Error(`HIBP API returned status ${res.statusCode}`));
         }
@@ -97,7 +98,7 @@ export async function checkPasswordBreach(password: string): Promise<BreachCheck
     const suffix = hash.substring(5);
 
     // Fetch matching hashes from HIBP
-    const response = await fetchHIBP(prefix);
+    const { data: response, cached } = await fetchHIBP(prefix);
 
     // Parse response (format: SUFFIX:COUNT\r\n)
     const lines = response.split('\r\n');
@@ -111,6 +112,7 @@ export async function checkPasswordBreach(password: string): Promise<BreachCheck
         return {
           breached: true,
           count,
+          networkRequestSkipped: cached,
         };
       }
     }
@@ -118,12 +120,14 @@ export async function checkPasswordBreach(password: string): Promise<BreachCheck
     return {
       breached: false,
       count: 0,
+      networkRequestSkipped: cached,
     };
   } catch (error) {
     return {
       breached: false,
       count: 0,
       error: error instanceof Error ? error.message : 'Unknown error',
+      networkRequestSkipped: false,
     };
   }
 }
@@ -147,8 +151,8 @@ export async function checkMultipleBreaches(
       onProgress(checked, passwords.length);
     }
 
-    // Small delay to avoid rate limiting
-    if (checked < passwords.length) {
+    // Small delay to avoid rate limiting, skip if a network request wasn't needed
+    if (!result.networkRequestSkipped && checked < passwords.length) {
       await new Promise(resolve => setTimeout(resolve, 200));
     }
   }

@@ -27,3 +27,7 @@
 ## 2024-05-25 - Parallelizing Network I/O in Low-Level Clients
 **Learning:** Sequential network I/O in arrays creates significant bottlenecks. However, when working in low-level client files like `src/storage/drive/driveClient.ts`, importing higher-level parallelization utilities (like `runParallel` from `fileSyncService.ts`) creates inverted/circular dependencies that complicate architecture.
 **Action:** When parallelizing network requests in foundational client modules, avoid external imports. Instead, implement inline chunked batching (e.g., using `Promise.all` over chunks of 5-20) to maintain high throughput while strictly preserving module dependency boundaries.
+
+## 2024-05-30 - Safe Rate-Limit Bypassing via k-anonymity Cache
+**Learning:** When optimizing external API lookups in a password manager (e.g., Have I Been Pwned checks), NEVER cache by plaintext password in memory as it creates a severe security vulnerability (memory scraping/crash dumps).
+**Action:** Instead, leverage the safe k-anonymity SHA-1 prefix cache (`hibpCache`) to detect cache hits and use that boolean status to safely skip artificial rate-limit delays for duplicate inputs.

@@ -617,7 +617,7 @@ async function executeCommand(cmd: string, args: string[]): Promise<boolean> {
               }
 
               // Delay to avoid rate limiting
-              if (checked < passwordsToCheck.length) {
+              if (!result.networkRequestSkipped && checked < passwordsToCheck.length) {
                 await new Promise(resolve => setTimeout(resolve, 200));
               }
             }
