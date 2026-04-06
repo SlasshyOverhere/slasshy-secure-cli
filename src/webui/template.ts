@@ -794,7 +794,7 @@ input[type="file"]::file-selector-button {
           <input id="search" type="search" placeholder="Search… (/)" aria-label="Search entries (Press / to focus)">
           <select id="typeFilter" aria-label="Filter by type"><option value="all">All</option><option value="password">Passwords</option><option value="note">Notes</option><option value="file">Files</option></select>
         </div>
-        <ul id="entryList" class="entry-list"></ul>
+        <ul id="entryList" class="entry-list" aria-live="polite"></ul>
       </aside>
 
       <div class="workspace">
@@ -834,7 +834,7 @@ input[type="file"]::file-selector-button {
         <!-- DETAIL PANEL -->
         <section class="card detail-panel">
           <div class="card-title"><span><span class="icon"></span>Entry Detail</span></div>
-          <p id="detailHint" class="hint empty-state">Select an entry to inspect, edit, download, or preview video.</p>
+          <p id="detailHint" class="hint empty-state" aria-live="polite">Select an entry to inspect, edit, download, or preview video.</p>
           <form id="detailForm" class="form-stack hidden">
             <input id="detailTitle" type="text" maxlength="256" required aria-label="Entry title">
             <p style="display:flex;align-items:center;gap:10px">
@@ -1017,7 +1017,28 @@ input[type="file"]::file-selector-button {
     function renderEntries(){
       el.entryList.innerHTML='';
       if(!s.status.unlocked){const li=document.createElement('li');li.className='hint empty-state';li.textContent='Vault is locked. Unlock to access your entries.';el.entryList.appendChild(li);return}
-      if(!s.entries.length){const li=document.createElement('li');li.className='hint empty-state';li.textContent=(s.entryFilters.query||s.entryFilters.type!=='all')?'No entries match your search.':'Vault is empty. Create an entry or upload a file.';el.entryList.appendChild(li);return}
+      if(!s.entries.length){
+        const li=document.createElement('li');
+        li.className='hint empty-state';
+        const isFiltered = !!el.search.value || el.typeFilter.value !== 'all';
+        li.textContent=isFiltered?'No entries match your search. ':'Vault is empty. Create an entry or upload a file.';
+        if(isFiltered){
+          const clearBtn = document.createElement('button');
+          clearBtn.type = 'button';
+          clearBtn.className = 'btn outline';
+          clearBtn.style.marginTop = '10px';
+          clearBtn.textContent = 'Clear Filters';
+          clearBtn.addEventListener('click', () => {
+            el.search.value = '';
+            el.typeFilter.value = 'all';
+            void refreshEntries();
+          });
+          li.appendChild(document.createElement('br'));
+          li.appendChild(clearBtn);
+        }
+        el.entryList.appendChild(li);
+        return;
+      }
       s.entries.forEach(en=>{
         const li=document.createElement('li');
         const b=document.createElement('button');b.type='button';b.className='entry-item';
@@ -1079,6 +1100,13 @@ input[type="file"]::file-selector-button {
     /* ── Bind ── */
     el.createType.addEventListener('change',switchCreate);
     el.search.addEventListener('input',()=>{if(searchTimer)clearTimeout(searchTimer);searchTimer=setTimeout(()=>{void refreshEntries()},200)});
+    el.search.addEventListener('keydown',(e)=>{
+      if(e.key==='Escape') {
+        el.search.value='';
+        el.search.blur();
+        void refreshEntries();
+      }
+    });
     el.typeFilter.addEventListener('change',()=>{void refreshEntries()});
     el.refreshButton.addEventListener('click',async ()=>{busy(el.refreshButton,true,'Refreshing…','Refresh');await refreshStatus(true);busy(el.refreshButton,false,'Refreshing…','Refresh')});
     el.reloadEntries.addEventListener('click',async ()=>{busy(el.reloadEntries,true,'Reloading…','Reload');await refreshEntries();busy(el.reloadEntries,false,'Reloading…','Reload')});
