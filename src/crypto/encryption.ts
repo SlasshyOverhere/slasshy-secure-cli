@@ -7,6 +7,16 @@ const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
 
+// Performance: Reuse cipher instances where possible (thread-safe in Node.js)
+const CIPHER_CACHE_SIZE = 100;
+interface CipherCacheEntry {
+  cipher: crypto.CipherGCM;
+  lastUsed: number;
+}
+const cipherCache = new Map<string, CipherCacheEntry>();
+let cacheHits = 0;
+let cacheMisses = 0;
+
 /**
  * Encrypt data using AES-256-GCM
  */

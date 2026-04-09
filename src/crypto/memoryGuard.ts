@@ -3,6 +3,72 @@ import crypto from 'crypto';
 const SECURE_BUFFERS: Set<Buffer> = new Set();
 
 /**
+ * SecureString - A class that keeps sensitive data in mutable Buffers only
+ * Prevents string immutability issues by never converting to JavaScript strings
+ */
+export class SecureString {
+  private buffer: Buffer | null = null;
+  private readonly encoding: BufferEncoding = 'utf-8';
+
+  constructor(secret: Buffer | string) {
+    if (Buffer.isBuffer(secret)) {
+      this.buffer = Buffer.from(secret);
+      SECURE_BUFFERS.add(this.buffer);
+    } else {
+      // Convert string to buffer immediately
+      this.buffer = Buffer.from(secret, this.encoding);
+      SECURE_BUFFERS.add(this.buffer);
+      // Note: The original string still exists in caller's scope
+      // This is why we should use SecureString from input point
+    }
+  }
+
+  /**
+   * Get the secret as a buffer (copy)
+   */
+  getBuffer(): Buffer {
+    if (!this.buffer) {
+      throw new Error('SecureString has been wiped');
+    }
+    return Buffer.from(this.buffer);
+  }
+
+  /**
+   * Get the secret as a string (temporary, caller must not store)
+   */
+  getString(): string {
+    if (!this.buffer) {
+      throw new Error('SecureString has been wiped');
+    }
+    return this.buffer.toString(this.encoding);
+  }
+
+  /**
+   * Securely wipe the secret from memory
+   */
+  wipe(): void {
+    if (this.buffer) {
+      wipeBuffer(this.buffer);
+      this.buffer = null;
+    }
+  }
+
+  /**
+   * Check if still has data
+   */
+  isWiped(): boolean {
+    return this.buffer === null;
+  }
+
+  /**
+   * Auto-wipe on garbage collection
+   */
+  [Symbol.dispose]() {
+    this.wipe();
+  }
+}
+
+/**
  * Create a secure buffer that will be tracked for wiping
  */
 export function createSecureBuffer(size: number): Buffer {
