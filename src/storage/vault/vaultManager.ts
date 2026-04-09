@@ -300,7 +300,7 @@ export async function getEntry(id: string): Promise<Entry | null> {
 }
 
 /**
- * Search entries by title
+ * Search entries by title with optimized parallel processing
  */
 export async function searchEntries(query: string): Promise<Entry[]> {
   if (!isUnlocked() || !vaultIndex) {
@@ -311,34 +311,33 @@ export async function searchEntries(query: string): Promise<Entry[]> {
   const indexKey = getIndexKey();
   const queryLower = query.toLowerCase();
 
-  const matchIds: string[] = [];
+  // Performance: Process all titles in parallel first
+  const entries = Object.entries(vaultIndex.entries);
+  const titleChecks = await Promise.all(
+    entries.map(async ([id, indexEntry]) => {
+      if (!indexEntry) return null;
 
-  for (const id in vaultIndex.entries) {
-    if (!Object.hasOwn(vaultIndex.entries, id)) {
-      continue;
-    }
-
-    const indexEntry = vaultIndex.entries[id];
-    if (!indexEntry) {
-      continue;
-    }
-
-    try {
-      const title = decryptToString(indexEntry.titleEncrypted, indexKey);
-      if (title.toLowerCase().includes(queryLower)) {
-        matchIds.push(id);
+      try {
+        const title = decryptToString(indexEntry.titleEncrypted, indexKey);
+        if (title.toLowerCase().includes(queryLower)) {
+          return id;
+        }
+      } catch {
+        // Skip entries that fail to decrypt
       }
-    } catch {
-      // Skip entries that fail to decrypt
-    }
-  }
+      return null;
+    })
+  );
 
-  // Fetch matched entries in parallel batches to avoid sequential disk I/O bottleneck
+  // Filter out nulls and fetch matching entries
+  const matchIds = titleChecks.filter((id): id is string => id !== null);
+
+  // Fetch matched entries in parallel batches
   const batchSize = 20;
   for (let i = 0; i < matchIds.length; i += batchSize) {
     const batch = matchIds.slice(i, i + batchSize);
-    const entries = await Promise.all(batch.map(id => getEntry(id)));
-    for (const entry of entries) {
+    const batchResults = await Promise.all(batch.map(id => getEntry(id)));
+    for (const entry of batchResults) {
       if (entry) {
         results.push(entry);
       }
