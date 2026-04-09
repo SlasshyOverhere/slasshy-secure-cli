@@ -48,6 +48,26 @@ const MAX_UPLOAD_SESSION_AGE_MS = 60 * 60 * 1000;
 const CLI_RUN_TIMEOUT_MS = 120_000;
 const CLI_RUN_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
 const BLOCKED_WEB_CLI_COMMANDS = new Set(['web', 'ui', 'destruct', 'init', 'auth', 'delete']);
+
+// File upload security: Allowed file types and max size
+const ALLOWED_FILE_EXTENSIONS = new Set([
+  // Documents
+  '.txt', '.md', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+  '.odt', '.ods', '.odp', '.rtf', '.csv', '.json', '.xml', '.html', '.css',
+  // Images
+  '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.webp', '.ico', '.tiff', '.tif',
+  // Audio/Video
+  '.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac',
+  '.mp4', '.mkv', '.avi', '.mov', '.webm', '.wmv',
+  // Archives (compressed)
+  '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz',
+  // Code
+  '.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.c', '.cpp', '.h', '.hpp',
+  '.go', '.rs', '.rb', '.php', '.cs', '.swift', '.kt', '.scala',
+]);
+
+const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB
+
 const BRAND_LOGO_CANDIDATES = [
   path.join(process.cwd(), 'assets', 'blankdrive-logo.png'),
   path.join(process.cwd(), 'desktop-application', 'src-tauri', 'icons', 'blankdrive.png'),
@@ -84,6 +104,71 @@ interface CliRunResult {
 
 const uploadSessions = new Map<string, UploadSession>();
 let brandLogoBufferCache: Buffer | null = null;
+
+// CSRF Protection: Generate and validate tokens
+interface CsrfToken {
+  token: string;
+  createdAt: number;
+  used: boolean;
+}
+
+const csrfTokens = new Map<string, CsrfToken>();
+const CSRF_TOKEN_EXPIRY_MS = 60 * 1000; // 1 hour
+const MAX_CSRF_TOKENS_PER_SESSION = 100;
+
+/**
+ * Generate a cryptographically secure CSRF token
+ */
+function generateCsrfToken(sessionId: string): string {
+  const token = randomBytes(32).toString('hex');
+  const now = Date.now();
+
+  // Clean up old tokens for this session
+  let count = 0;
+  for (const [key, value] of csrfTokens.entries()) {
+    if (now - value.createdAt > CSRF_TOKEN_EXPIRY_MS || value.used) {
+      csrfTokens.delete(key);
+    } else if (key.startsWith(sessionId + ':')) {
+      count++;
+    }
+  }
+
+  // Limit tokens per session to prevent memory exhaustion
+  if (count >= MAX_CSRF_TOKENS_PER_SESSION) {
+    throw new HttpError(429, 'Too many CSRF tokens generated for this session.');
+  }
+
+  const tokenId = `${sessionId}:${token}`;
+  csrfTokens.set(tokenId, { token, createdAt: now, used: false });
+
+  return token;
+}
+
+/**
+ * Validate a CSRF token
+ */
+function validateCsrfToken(sessionId: string, token: string): boolean {
+  const tokenId = `${sessionId}:${token}`;
+  const entry = csrfTokens.get(tokenId);
+
+  if (!entry) {
+    return false;
+  }
+
+  // Check expiry
+  if (Date.now() - entry.createdAt > CSRF_TOKEN_EXPIRY_MS) {
+    csrfTokens.delete(tokenId);
+    return false;
+  }
+
+  // Mark as used (one-time use tokens are more secure)
+  if (entry.used) {
+    return false;
+  }
+
+  entry.used = true;
+  return true;
+}
 
 class HttpError extends Error {
   public readonly statusCode: number;
@@ -151,8 +236,13 @@ function createUnlockRateLimiter(): UnlockRateLimiter {
   return new UnlockRateLimiter(UNLOCK_RATE_LIMIT_MAX_ATTEMPTS, UNLOCK_RATE_LIMIT_WINDOW_MS);
 }
 
-function getUnlockRateLimitKey(req: IncomingMessage): string {
-  return req.socket.remoteAddress || 'unknown';
+function getUnlockRateLimitKey(req: IncomingMessage, vaultId?: string): string {
+  // Rate limit by both IP and vault ID to prevent NAT-based DoS
+  const ip = req.socket.remoteAddress || 'unknown';
+  if (vaultId) {
+    return `${ip}:${vaultId}`;
+  }
+  return ip;
 }
 
 function isInvalidUnlockError(error: unknown): boolean {
@@ -450,55 +540,87 @@ async function cleanupExpiredUploadSessions(): Promise<void> {
   await Promise.all(expiredIds.map((uploadId) => cleanupUploadSession(uploadId)));
 }
 
+/**
+ * Secure CLI command parser that prevents injection attacks
+ * Uses strict validation and sanitization
+ */
 function parseCliCommandLine(input: string): string[] {
+  // Reject dangerous characters that could enable injection
+  const dangerousPatterns = /[;&|`$(){}[\]!#~]/;
+  if (dangerousPatterns.test(input)) {
+    throw new HttpError(400, 'Command contains invalid characters.');
+  }
+
   const args: string[] = [];
   let current = '';
   let quote: '"' | '\'' | null = null;
+  let i = 0;
 
-  for (let i = 0; i < input.length; i++) {
+  while (i < input.length) {
     const ch = input[i]!;
 
+    // Handle escape sequences
     if (ch === '\\') {
       const next = input[i + 1];
-      if (next !== undefined) {
+      if (next !== undefined && (next === '"' || next === '\'' || next === '\\' || next === ' ')) {
         current += next;
-        i++;
+        i += 2;
         continue;
       }
       current += ch;
+      i++;
       continue;
     }
 
+    // Handle quotes
     if (quote) {
       if (ch === quote) {
         quote = null;
       } else {
         current += ch;
       }
+      i++;
       continue;
     }
 
     if (ch === '"' || ch === '\'') {
       quote = ch;
+      i++;
       continue;
     }
 
+    // Handle whitespace
     if (/\s/.test(ch)) {
       if (current.length > 0) {
         args.push(current);
         current = '';
       }
+      i++;
       continue;
     }
 
     current += ch;
+    i++;
   }
 
   if (quote) {
     throw new HttpError(400, 'Unclosed quote in command.');
   }
+
   if (current.length > 0) {
     args.push(current);
+  }
+
+  // Validate command is not empty
+  if (args.length === 0) {
+    throw new HttpError(400, 'Empty command.');
+  }
+
+  // Blocklist check on the first argument (the command)
+  const command = args[0]!.toLowerCase();
+  const blockedCommands = ['rm', 'del', 'rmdir', 'mkfs', 'format', 'shutdown', 'reboot'];
+  if (blockedCommands.includes(command)) {
+    throw new HttpError(400, `Command "${command}" is not allowed.`);
   }
 
   return args;
@@ -591,11 +713,28 @@ function ensureUnlocked(): void {
   }
 }
 
+/**
+ * Validate file extension for security
+ */
+function validateFileExtension(fileName: string): void {
+  const ext = path.extname(fileName).toLowerCase();
+  if (!ext) {
+    throw new HttpError(400, 'File must have an extension.');
+  }
+
+  if (!ALLOWED_FILE_EXTENSIONS.has(ext)) {
+    throw new HttpError(400, `File type "${ext}" is not allowed. Allowed types: ${[...ALLOWED_FILE_EXTENSIONS].slice(0, 10).join(', ')}...`);
+  }
+}
+
 function sanitizeUploadFileName(fileName: string): string {
   const baseName = path.basename(fileName).trim();
   if (!baseName) {
     throw new HttpError(400, 'fileName is invalid.');
   }
+
+  // Validate file extension first
+  validateFileExtension(baseName);
 
   const safeName = baseName.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_');
   if (!safeName || safeName === '.' || safeName === '..') {
