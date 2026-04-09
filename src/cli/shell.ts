@@ -1213,7 +1213,8 @@ export async function startShell(): Promise<void> {
   const { checkDuressPasswordPreUnlock, activateDuressModeSimple, isInDuressMode: checkDuressMode } = await import('./duress.js');
 
   if (!isUnlocked() && !checkDuressMode()) {
-    console.log(chalk.white('  Please unlock your vault to continue.\n'));
+    console.log(chalk.white('  Please unlock your vault to continue.'));
+    console.log(chalk.gray('  Type "destruct" at the password prompt to permanently delete the vault.\n'));
 
     let unlocked = false;
     let attempts = 0;
@@ -1225,6 +1226,35 @@ export async function startShell(): Promise<void> {
       try {
         initializeKeyManager();
         const password = await promptPassword();
+
+        // Check if user wants to destruct the vault
+        if (password.toLowerCase().trim() === 'destruct') {
+          console.log(chalk.yellow('\n  Vault destruction requires separate confirmation.\n'));
+          console.log(chalk.gray('  To permanently delete your vault and all data, run:'));
+          console.log(chalk.white('    BLANK destruct\n'));
+          console.log(chalk.gray('  Then create a new vault with:'));
+          console.log(chalk.white('    BLANK init\n'));
+
+          // Ask if they want to run destruct now
+          const { runDestruct } = await inquirer.prompt([
+            {
+              type: 'confirm',
+              name: 'runDestruct',
+              message: chalk.cyan('Would you like to run the destruct command now?'),
+              default: false,
+            },
+          ]);
+
+          if (runDestruct) {
+            console.log('');
+            await destructCommand();
+            console.log(chalk.gray('\n  To create a new vault, run: ') + chalk.white('BLANK init\n'));
+            process.exit(0);
+          } else {
+            console.log(chalk.gray('\n  Use "BLANK destruct" anytime to delete the vault.\n'));
+            process.exit(0);
+          }
+        }
 
         const spinner = ora('Unlocking vault...').start();
 
@@ -1303,7 +1333,10 @@ export async function startShell(): Promise<void> {
           if (remaining > 0) {
             console.log(chalk.red(`  Invalid password. ${remaining} attempt(s) remaining.\n`));
           } else {
-            console.log(chalk.red('\n  Too many failed attempts. Exiting.\n'));
+            console.log(chalk.red('\n  Too many failed attempts. Vault locked.\n'));
+            console.log(chalk.yellow('  If you forgot your password, you can:'));
+            console.log(chalk.gray('    1. Delete the vault: ') + chalk.white('BLANK destruct'));
+            console.log(chalk.gray('    2. Create a new one: ') + chalk.white('BLANK init\n'));
             process.exit(1);
           }
         }

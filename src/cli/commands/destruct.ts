@@ -55,18 +55,9 @@ export async function destructCommand(): Promise<void> {
     return;
   }
 
-  // Verify password if vault exists
-  if (await vaultExists()) {
-    console.log(chalk.gray('\n  Verify your identity:'));
-    try {
-      initializeKeyManager();
-      const password = await promptPassword();
-      await unlock(password);
-    } catch {
-      console.log(chalk.red('\n  ✗ Invalid password. Self-destruct cancelled.\n'));
-      return;
-    }
-  }
+  // No password verification needed - user has already confirmed twice
+  // and explicitly typed "DESTROY". This allows users who forgot their
+  // password to still delete the vault.
 
   console.log('');
   const spinner = ora('Initiating self-destruct sequence...').start();
