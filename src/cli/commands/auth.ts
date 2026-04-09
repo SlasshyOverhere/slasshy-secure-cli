@@ -137,19 +137,34 @@ async function authenticateGoogleDrive(forceSetup: boolean = false): Promise<voi
     console.log(chalk.green(`\n  Public folder saved: BlankDrive/${folderName}\n`));
   }
 
-  const credentialsConfigured = await isGoogleOAuthConfigured();
+  // When using backend OAuth service, skip credential prompts
+  const usingBackend = !!process.env.BLANKDRIVE_OAUTH_BACKEND_URL || true; // Default to backend mode
 
-  if (!credentialsConfigured || forceSetup) {
-    const credentials = await promptGoogleOAuthCredentials();
-    await setGoogleOAuthCredentials(credentials.clientId, credentials.clientSecret);
-    console.log(chalk.green('\n  Google OAuth credentials saved.'));
-    console.log(chalk.gray('  Stored locally in encrypted form.\n'));
-  } else {
-    const credentials = await getGoogleOAuthCredentials();
-    if (credentials) {
-      console.log(chalk.gray(`  Using Google OAuth Client ID: ${maskGoogleClientId(credentials.clientId)}`));
-      console.log(chalk.gray('  Use "BLANK auth --setup" to update credentials.\n'));
+  if (!usingBackend || forceSetup) {
+    // Only prompt for credentials if NOT using backend OR user explicitly requested setup
+    const userCredentialsConfigured = await isGoogleOAuthConfigured();
+
+    if (!userCredentialsConfigured && !forceSetup) {
+      console.log(chalk.green('\n  ✓ Using embedded Google OAuth credentials (no setup required).'));
+      console.log(chalk.gray('  You can configure your own with: ') + chalk.cyan('BLANK auth --setup\n'));
+    } else if (forceSetup) {
+      // User explicitly requested to set up custom credentials
+      const credentials = await promptGoogleOAuthCredentials();
+      await setGoogleOAuthCredentials(credentials.clientId, credentials.clientSecret);
+      console.log(chalk.green('\n  ✓ Custom Google OAuth credentials saved.'));
+      console.log(chalk.gray('  Stored locally in encrypted form.\n'));
+    } else {
+      // User has configured custom credentials
+      const credentials = await getGoogleOAuthCredentials();
+      if (credentials) {
+        console.log(chalk.gray(`  Using custom Google OAuth Client ID: ${maskGoogleClientId(credentials.clientId)}`));
+        console.log(chalk.gray('  Use "BLANK auth --setup" to update credentials.\n'));
+      }
     }
+  } else {
+    // Using backend - just inform user
+    console.log(chalk.green('\n  ✓ Using backend OAuth service (credentials managed securely on server).'));
+    console.log(chalk.gray('  To use custom credentials, run: ') + chalk.cyan('BLANK auth --setup\n'));
   }
 
   // Check if already authenticated

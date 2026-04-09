@@ -1,10 +1,6 @@
-/**
- * Ensure user is authenticated with Google Drive
- * Auto-triggers auth flow if not authenticated
- */
-
 import chalk from 'chalk';
 import ora from 'ora';
+import inquirer from 'inquirer';
 import {
   isAuthenticated,
   authenticateDrive,
@@ -37,6 +33,7 @@ import { isInDuressMode } from './duress.js';
 import { promptGoogleOAuthCredentials } from './googleOAuthSetup.js';
 import { promptCloudStorageMode, promptPublicContentFolderName } from './cloudStorageSetup.js';
 import { openExternalUrl } from './openExternal.js';
+import { destructCommand } from './commands/destruct.js';
 
 /**
  * Detect OAuth client credential issues that require re-entering Client ID/Secret.
@@ -97,80 +94,127 @@ export async function ensureAuthenticated(): Promise<boolean> {
   // Step 2: Unlock vault if needed (required for token encryption)
   if (!isUnlocked()) {
     initializeKeyManager();
-    const password = await promptPassword();
 
-    const spinner = ora('Unlocking vault...').start();
-    try {
-      await unlock(password);
-      spinner.succeed('Vault unlocked');
+    let unlockAttempts = 0;
+    const maxUnlockAttempts = 3;
 
-      // Check if 2FA is enabled
-      const vault2FAConfig = getVault2FAConfig();
-      if (vault2FAConfig?.enabled) {
-        spinner.stop();
-        console.log(chalk.cyan('\n  Two-factor authentication required.\n'));
+    while (unlockAttempts < maxUnlockAttempts) {
+      unlockAttempts++;
+      const password = await promptPassword();
 
-        let authenticated = false;
-        let attempts = 0;
-        const maxAttempts = 3;
+      const spinner = ora('Unlocking vault...').start();
+      try {
+        await unlock(password);
+        spinner.succeed('Vault unlocked');
+        break; // Success, exit loop
+      } catch (error) {
+        spinner.fail('Failed to unlock vault');
 
-        while (!authenticated && attempts < maxAttempts) {
-          attempts++;
-          const code = await prompt2FACode();
+        // Log failed unlock attempt
+        await logAuditEvent('failed_unlock_attempt');
 
-          // Check if it's a backup code (format: XXXX-XXXX)
-          if (/^[A-Z0-9]{4}-?[A-Z0-9]{4}$/i.test(code.replace(/\s/g, ''))) {
-            // Try as backup code
-            if (vault2FAConfig.backupCodes) {
-              const backupIndex = verifyBackupCode(code, vault2FAConfig.backupCodes);
-              if (backupIndex >= 0) {
-                // Valid backup code - use it (removes from list)
-                await useBackupCode(backupIndex);
-                authenticated = true;
-                console.log(chalk.yellow('\n  Backup code used. ' + (vault2FAConfig.backupCodes.length - 1) + ' codes remaining.'));
-                await logAuditEvent('vault_unlocked_backup_code');
-              }
-            }
-          } else {
-            // Try as TOTP code
-            if (verifyVault2FACode(code, vault2FAConfig.secret)) {
+        const remaining = maxUnlockAttempts - unlockAttempts;
+
+        if (remaining > 0) {
+          console.log(chalk.yellow(`\n  Incorrect password. ${remaining} attempt(s) remaining.\n`));
+
+          // Offer to delete vault and start fresh
+          const { action } = await inquirer.prompt([
+            {
+              type: 'list',
+              name: 'action',
+              message: chalk.cyan('What would you like to do?'),
+              choices: [
+                { name: '🔑 Try password again', value: 'retry' },
+                { name: '💀 Delete vault and create new one', value: 'destruct' },
+                { name: '❌ Exit', value: 'exit' },
+              ],
+            },
+          ]);
+
+          if (action === 'destruct') {
+            spinner.stop();
+            console.log(chalk.yellow('\n  Vault deletion requires separate confirmation.\n'));
+            console.log(chalk.gray('  To permanently delete your vault and all data, run:'));
+            console.log(chalk.white('    BLANK destruct\n'));
+            console.log(chalk.gray('  Then create a new vault with:'));
+            console.log(chalk.white('    BLANK init\n'));
+            return false;
+          } else if (action === 'exit') {
+            spinner.stop();
+            return false;
+          }
+          // If 'retry', continue the loop
+        } else {
+          console.log(chalk.red('\n  Too many failed attempts. Vault locked.\n'));
+          console.log(chalk.yellow('  If you forgot your password, you can:'));
+          console.log(chalk.gray('    1. Delete the vault: ') + chalk.white('BLANK destruct'));
+          console.log(chalk.gray('    2. Create a new one: ') + chalk.white('BLANK init\n'));
+          return false;
+        }
+      }
+    }
+
+    // Check if we exceeded max attempts
+    if (unlockAttempts >= maxUnlockAttempts) {
+      return false;
+    }
+
+    // Check if 2FA is enabled
+    const vault2FAConfig = getVault2FAConfig();
+    if (vault2FAConfig?.enabled) {
+      console.log(chalk.cyan('\n  Two-factor authentication required.\n'));
+
+      let authenticated = false;
+      let attempts = 0;
+      const maxAttempts = 3;
+
+      while (!authenticated && attempts < maxAttempts) {
+        attempts++;
+        const code = await prompt2FACode();
+
+        // Check if it's a backup code (format: XXXX-XXXX)
+        if (/^[A-Z0-9]{4}-?[A-Z0-9]{4}$/i.test(code.replace(/\s/g, ''))) {
+          // Try as backup code
+          if (vault2FAConfig.backupCodes) {
+            const backupIndex = verifyBackupCode(code, vault2FAConfig.backupCodes);
+            if (backupIndex >= 0) {
+              // Valid backup code - use it (removes from list)
+              await useBackupCode(backupIndex);
               authenticated = true;
+              console.log(chalk.yellow('\n  Backup code used. ' + (vault2FAConfig.backupCodes.length - 1) + ' codes remaining.'));
+              await logAuditEvent('vault_unlocked_backup_code');
             }
           }
-
-          if (!authenticated) {
-            const remaining = maxAttempts - attempts;
-            if (remaining > 0) {
-              console.log(chalk.red(`  Invalid code. ${remaining} attempt(s) remaining.\n`));
-            }
+        } else {
+          // Try as TOTP code
+          if (verifyVault2FACode(code, vault2FAConfig.secret)) {
+            authenticated = true;
           }
         }
 
         if (!authenticated) {
-          // Lock the vault since 2FA failed
-          const { lock } = await import('../storage/vault/index.js');
-          lock();
-          await logAuditEvent('failed_2fa_attempt');
-          console.log(chalk.red('\n  Too many failed 2FA attempts. Vault locked.\n'));
-          return false;
+          const remaining = maxAttempts - attempts;
+          if (remaining > 0) {
+            console.log(chalk.red(`  Invalid code. ${remaining} attempt(s) remaining.\n`));
+          }
         }
-
-        console.log(chalk.green('  2FA verified successfully.\n'));
       }
 
-      // Log successful unlock
-      await logAuditEvent('vault_unlocked');
-    } catch (error) {
-      spinner.fail('Failed to unlock vault');
-
-      // Log failed unlock attempt
-      await logAuditEvent('failed_unlock_attempt');
-
-      if (error instanceof Error) {
-        console.log(chalk.red(`  ${error.message}`));
+      if (!authenticated) {
+        // Lock the vault since 2FA failed
+        const { lock } = await import('../storage/vault/index.js');
+        lock();
+        await logAuditEvent('failed_2fa_attempt');
+        console.log(chalk.red('\n  Too many failed 2FA attempts. Vault locked.\n'));
+        return false;
       }
-      return false;
+
+      console.log(chalk.green('  2FA verified successfully.\n'));
     }
+
+    // Log successful unlock
+    await logAuditEvent('vault_unlocked');
   }
 
   // Step 3: Cloud storage onboarding (mode + required public folder name)
@@ -194,11 +238,15 @@ export async function ensureAuthenticated(): Promise<boolean> {
     console.log(chalk.green(`\n  Public folder saved: BlankDrive/${folderName}\n`));
   }
 
-  // Step 4: Ensure Google OAuth client credentials exist before any auth attempt
-  if (!await isGoogleOAuthConfigured()) {
-    const credentials = await promptGoogleOAuthCredentials();
-    await setGoogleOAuthCredentials(credentials.clientId, credentials.clientSecret);
-    console.log(chalk.green('\n  Google OAuth credentials saved.\n'));
+  // Step 4: Skip OAuth credential check when using backend service
+  const usingBackend = !!process.env.BLANKDRIVE_OAUTH_BACKEND_URL || true; // Default to backend mode
+  if (!usingBackend) {
+    // Only check credentials if NOT using backend
+    if (!await isGoogleOAuthConfigured()) {
+      const credentials = await promptGoogleOAuthCredentials();
+      await setGoogleOAuthCredentials(credentials.clientId, credentials.clientSecret);
+      console.log(chalk.green('\n  Google OAuth credentials saved.\n'));
+    }
   }
 
   // Step 5: If already authenticated, initialize the client
