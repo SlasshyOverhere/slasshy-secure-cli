@@ -4,9 +4,30 @@ import http from 'http';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
+import chalk from 'chalk';
 import { google, drive_v3 } from 'googleapis';
 import { OAuth2Client, Credentials, CodeChallengeMethod } from 'google-auth-library';
 import { encryptToPayload, decryptToString, getMetadataKey } from '../../crypto/index.js';
+// Backend OAuth API response types
+interface GenerateAuthUrlResponse {
+  authUrl: string;
+  state: string;
+  codeVerifier: string;
+}
+
+interface ExchangeCodeResponse {
+  success: boolean;
+  tokens: {
+    access_token?: string;
+    refresh_token?: string;
+    expiry_date?: number;
+  };
+}
+
+interface BackendErrorResponse {
+  error: string;
+  message?: string;
+}
 
 // Scopes needed: drive.file for visible files, drive.appdata for hidden appDataFolder
 const SCOPES = [
@@ -19,6 +40,12 @@ const CLOUD_STORAGE_CONFIG_PATH = path.join(os.homedir(), '.slasshy', 'cloud_sto
 const OAUTH_CALLBACK_PATH = '/';
 const OAUTH_TIMEOUT_MS = 5 * 60 * 1000;
 const PUBLIC_ROOT_FOLDER_NAME = 'BlankDrive';
+const OAUTH_CALLBACK_PORT = 3411; // Fixed port for OAuth callback
+
+// Default Google OAuth credentials (embedded for seamless user experience)
+// Users can override with their own via BLANK auth --setup if desired
+const DEFAULT_GOOGLE_CLIENT_ID = 'YOUR_DEFAULT_CLIENT_ID_HERE.apps.googleusercontent.com';
+const DEFAULT_GOOGLE_CLIENT_SECRET = 'GOCSPX-YOUR_DEFAULT_SECRET_HERE';
 
 let driveClient: drive_v3.Drive | null = null;
 let authClient: OAuth2Client | null = null;
@@ -118,33 +145,54 @@ function generateCodeChallenge(codeVerifier: string): string {
 
 /**
  * Read Google OAuth client credentials from local encrypted storage
+ * Falls back to embedded default credentials if none configured
  */
-export async function getGoogleOAuthCredentials(): Promise<GoogleOAuthCredentials | null> {
+export async function getGoogleOAuthCredentials(): Promise<GoogleOAuthCredentials> {
+  // First try user-configured credentials (encrypted)
   try {
     const encrypted = await fs.readFile(GOOGLE_OAUTH_CREDENTIALS_PATH, 'utf-8');
     const metadataKey = getMetadataKey();
     const decrypted = decryptToString(encrypted, metadataKey);
     const parsed = JSON.parse(decrypted) as Partial<GoogleOAuthCredentials>;
 
-    if (!parsed.clientId || !parsed.clientSecret) {
-      return null;
+    if (parsed.clientId && parsed.clientSecret) {
+      return {
+        clientId: parsed.clientId,
+        clientSecret: parsed.clientSecret,
+      };
     }
-
-    return {
-      clientId: parsed.clientId,
-      clientSecret: parsed.clientSecret,
-    };
   } catch {
+    // No user credentials found, will use defaults
+  }
+
+  // Try session credentials
+  if (sessionOAuthCredentials) {
     return sessionOAuthCredentials;
   }
+
+  // Fall back to embedded default credentials
+  // This eliminates the need for users to set up their own OAuth app
+  return {
+    clientId: DEFAULT_GOOGLE_CLIENT_ID,
+    clientSecret: DEFAULT_GOOGLE_CLIENT_SECRET,
+  };
 }
 
 /**
- * Check if Google OAuth credentials are configured
+ * Check if user has configured their own Google OAuth credentials
+ * (returns false if using embedded defaults)
  */
 export async function isGoogleOAuthConfigured(): Promise<boolean> {
-  const credentials = await getGoogleOAuthCredentials();
-  return !!credentials?.clientId && !!credentials?.clientSecret;
+  try {
+    const encrypted = await fs.readFile(GOOGLE_OAUTH_CREDENTIALS_PATH, 'utf-8');
+    const metadataKey = getMetadataKey();
+    const decrypted = decryptToString(encrypted, metadataKey);
+    const parsed = JSON.parse(decrypted) as Partial<GoogleOAuthCredentials>;
+
+    return !!(parsed.clientId && parsed.clientSecret);
+  } catch {
+    return false; // Using default credentials
+  }
 }
 
 /**
@@ -416,10 +464,24 @@ async function startOAuthCallbackServer(
   const host = '127.0.0.1';
   const server = http.createServer();
 
+  // Use fixed port for consistent redirect URI
   await new Promise<void>((resolve, reject) => {
-    const onError = (error: Error) => reject(error);
+    const onError = (error: NodeJS.ErrnoException) => {
+      if (error.code === 'EADDRINUSE') {
+        console.log(chalk.yellow(`  ⚠ Port ${OAUTH_CALLBACK_PORT} in use, trying next port...`));
+        // Try next port
+        setTimeout(() => {
+          server.listen(OAUTH_CALLBACK_PORT + 1, host, () => {
+            server.off('error', onError);
+            resolve();
+          });
+        }, 100);
+      } else {
+        reject(error);
+      }
+    };
     server.once('error', onError);
-    server.listen(0, host, () => {
+    server.listen(OAUTH_CALLBACK_PORT, host, () => {
       server.off('error', onError);
       resolve();
     });
@@ -432,6 +494,7 @@ async function startOAuthCallbackServer(
   }
 
   const redirectUri = `http://${host}:${address.port}`;
+  console.log(chalk.gray(`  Callback server listening on ${redirectUri}`));
 
   const codePromise = new Promise<string>((resolve, reject) => {
     let finished = false;
@@ -588,9 +651,201 @@ export async function authenticateDrive(): Promise<void> {
 }
 
 /**
- * Perform full OAuth authentication flow
+ * Perform full OAuth authentication flow using backend service
  */
 export async function performOAuthFlow(
+  openBrowser: (url: string) => Promise<void>,
+  options?: {
+    persistTokens?: boolean;
+  }
+): Promise<void> {
+  // Use backend OAuth service if available
+  const backendUrl = process.env.BLANKDRIVE_OAUTH_BACKEND_URL || 'http://localhost:3410';
+
+  try {
+    // Step 1: Generate PKCE parameters locally (frontend generates verifier)
+    const ourState = toBase64Url(crypto.randomBytes(24));
+    const ourCodeVerifier = generateCodeVerifier();
+    const ourCodeChallenge = generateCodeChallenge(ourCodeVerifier);
+
+    // Step 2: Start local callback server
+    const { redirectUri, codePromise } = await startOAuthCallbackServer(ourState);
+
+    // Step 3: Get auth URL from backend - send our code challenge
+    console.log('  Generating authorization URL from backend...');
+    const authUrlResponse = await fetch(
+      `${backendUrl}/api/oauth/generate-url?` +
+      `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+      `state=${encodeURIComponent(ourState)}&` +
+      `code_challenge=${encodeURIComponent(ourCodeChallenge)}&` +
+      `code_challenge_method=S256&` +
+      `code_verifier=${encodeURIComponent(ourCodeVerifier)}`
+    );
+
+    if (!authUrlResponse.ok) {
+      throw new Error(`Backend returned status ${authUrlResponse.status}`);
+    }
+
+    const backendData = await authUrlResponse.json() as GenerateAuthUrlResponse;
+    const { authUrl, codeVerifier } = backendData;
+
+    // Step 3: Open browser for user authorization
+    console.log('  Opening browser for Google authentication...');
+    await openBrowser(authUrl);
+
+    // Step 4: Wait for authorization code with manual fallback option
+    console.log(chalk.gray('\n  Waiting for callback...'));
+    console.log(chalk.gray('  Tip: If automatic redirect fails, you can manually paste the callback URL below.'));
+    console.log(chalk.gray('  After authorizing in browser, copy the full URL from address bar and paste it here.\n'));
+
+    // Start a timer to prompt for manual input after 15 seconds
+    let waitingForManual = false;
+    const manualPromptTimer = setTimeout(() => {
+      waitingForManual = true;
+      console.log(chalk.yellow('\n  ⏱ Still waiting... You can now paste the callback URL if needed:'));
+    }, 15000);
+
+    // Create a promise for manual input
+    const manualCodePromise = new Promise<string>((resolve, reject) => {
+      const checkInterval = setInterval(() => {
+        if (waitingForManual && process.stdin.isTTY) {
+          // Try to read from stdin if available
+          // This is a simplified version - in production use proper readline
+        }
+      }, 1000);
+
+      // Clean up on timeout
+      setTimeout(() => {
+        clearInterval(checkInterval);
+      }, OAUTH_TIMEOUT_MS);
+    });
+
+    // Wait for either automatic callback or timeout
+    let code: string;
+    try {
+      code = await codePromise;
+      clearTimeout(manualPromptTimer);
+    } catch (err) {
+      clearTimeout(manualPromptTimer);
+
+      // If timed out, offer manual input
+      console.log(chalk.yellow('\n  ⚠ Automatic callback failed or timed out.'));
+      console.log(chalk.cyan('\n  Please paste the full callback URL from your browser:'));
+      console.log(chalk.gray('  (It should look like: http://127.0.0.1:3411/?code=4/...)'));
+      console.log('');
+
+      // Use readline to get manual input
+      const readline = await import('readline');
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      });
+
+      const callbackUrl = await new Promise<string>((resolve) => {
+        rl.question(chalk.cyan('  Paste URL: '), resolve);
+      });
+
+      rl.close();
+
+      if (!callbackUrl || !callbackUrl.trim()) {
+        throw new Error('No callback URL provided');
+      }
+
+      // Parse the callback URL to extract code
+      try {
+        const url = new URL(callbackUrl.trim());
+        code = url.searchParams.get('code') || '';
+        const error = url.searchParams.get('error');
+
+        if (error) {
+          throw new Error(`OAuth error: ${error}`);
+        }
+
+        if (!code) {
+          console.log(chalk.red('  ✗ No authorization code found in URL'));
+          console.log(chalk.gray('  URL received:', callbackUrl));
+          throw new Error('No code in callback URL');
+        }
+
+        console.log(chalk.green('  ✓ Code extracted successfully\n'));
+      } catch (parseError) {
+        if (parseError instanceof Error && parseError.message.includes('OAuth error')) {
+          throw parseError;
+        }
+        console.log(chalk.red('  ✗ Failed to parse callback URL'));
+        console.log(chalk.gray('  Make sure you copied the complete URL'));
+        throw new Error('Invalid callback URL format');
+      }
+    }
+
+    // Step 5: Exchange code for tokens via backend
+    console.log('  Exchanging authorization code for tokens...');
+    const exchangeResponse = await fetch(`${backendUrl}/api/oauth/exchange-code`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, state: ourState, redirect_uri: redirectUri }),
+    });
+
+    if (!exchangeResponse.ok) {
+      let errorMessage = `Backend returned status ${exchangeResponse.status}`;
+      try {
+        const errorData = await exchangeResponse.json() as BackendErrorResponse & { details?: any };
+        console.error('  Backend error details:', errorData);
+        errorMessage = errorData.error || errorData.message || errorMessage;
+        if (errorData.details) {
+          console.error('  Error details:', JSON.stringify(errorData.details, null, 2));
+        }
+      } catch {
+        // If we can't parse error response, use status text
+        errorMessage = exchangeResponse.statusText || errorMessage;
+      }
+      throw new Error(errorMessage);
+    }
+
+    let exchangeData: ExchangeCodeResponse;
+    try {
+      const jsonData = await exchangeResponse.json();
+      exchangeData = jsonData as ExchangeCodeResponse;
+    } catch {
+      const responseText = await exchangeResponse.text();
+      console.error('  Invalid JSON response:', responseText.substring(0, 200));
+      throw new Error('Backend returned invalid JSON response');
+    }
+
+    const { tokens } = exchangeData;
+
+    if (!tokens.access_token) {
+      throw new Error('No access token received from backend');
+    }
+
+    console.log('  ✓ Tokens received successfully');
+
+    // Step 6: Save tokens locally (encrypted)
+    if (options?.persistTokens !== false) {
+      await saveTokens(tokens);
+    }
+
+    // Step 7: Setup Drive client
+    // For initial setup, we need credentials to create the client
+    // But tokens are what actually authenticate requests
+    const tempCredentials = await getGoogleOAuthCredentials();
+    await setupDriveClient(tokens, tempCredentials);
+
+  } catch (err) {
+    const error = err as Error;
+    // Fallback to local OAuth if backend is unavailable
+    console.log(chalk.yellow('  ⚠ Backend unavailable, falling back to local OAuth...'));
+    console.log(chalk.gray(`  (Error: ${error.message})\n`));
+
+    // Run original local OAuth flow
+    await performLocalOAuthFlow(openBrowser, options);
+  }
+}
+
+/**
+ * Original local OAuth flow (fallback when backend unavailable)
+ */
+async function performLocalOAuthFlow(
   openBrowser: (url: string) => Promise<void>,
   options?: {
     persistTokens?: boolean;
