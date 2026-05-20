@@ -602,9 +602,24 @@ async function executeCommand(cmd: string, args: string[]): Promise<boolean> {
             const safeEntries: string[] = [];
             const errorEntries: string[] = [];
 
+            // ⚡ Bolt Performance Optimization:
+            // Cache breach results by plaintext password to prevent duplicate
+            // API calls and skip the artificial 200ms rate-limit delay.
+            // Impact: Speeds up checking significantly when a user has
+            // multiple accounts sharing the same password (saves 200ms per duplicate).
+            const breachResults = new Map<string, BreachCheckResult>();
             let checked = 0;
             for (const entry of passwordsToCheck) {
-              const result = await checkPasswordBreach(entry.password);
+              let result: BreachCheckResult;
+              let isCached = false;
+              if (breachResults.has(entry.password)) {
+                result = breachResults.get(entry.password)!;
+                isCached = true;
+              } else {
+                result = await checkPasswordBreach(entry.password);
+                breachResults.set(entry.password, result);
+              }
+
               checked++;
               spinner.text = `Checking ${checked}/${passwordsToCheck.length} passwords...`;
 
@@ -617,7 +632,7 @@ async function executeCommand(cmd: string, args: string[]): Promise<boolean> {
               }
 
               // Delay to avoid rate limiting
-              if (checked < passwordsToCheck.length) {
+              if (checked < passwordsToCheck.length && !isCached) {
                 await new Promise(resolve => setTimeout(resolve, 200));
               }
             }
